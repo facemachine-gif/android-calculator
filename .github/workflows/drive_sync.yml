@@ -1,0 +1,206 @@
+name: Sync from Google Drive
+
+on:
+  schedule:
+    # Проверка обновлений каждые 15 минут
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      drive_folder_id:
+        description: 'ID папки на Google Диске (по умолчанию — ваша папка GitHub)'
+        required: false
+        default: '1EliN95P4dO1f0VDkOUWAVcU3fhhz9vfV'
+      repo_subfolder:
+        description: 'Имя подпапки проекта внутри папки GitHub (по умолчанию — имя репозитория)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Google Drive API client
+        run: pip install --quiet google-api-python-client google-auth
+
+      - name: Sync files from Google Drive
+        env:
+          GDRIVE_CREDENTIALS_JSON: ${{ secrets.GDRIVE_CREDENTIALS_JSON }}
+          ROOT_DRIVE_FOLDER_ID: ${{ github.event.inputs.drive_folder_id || '1EliN95P4dO1f0VDkOUWAVcU3fhhz9vfV' }}
+          REPO_SUBFOLDER: ${{ github.event.inputs.repo_subfolder || github.event.repository.name }}
+        run: |
+          python3 - << 'PYEOF'
+          import base64
+          import io
+          import json
+          import os
+          import pathlib
+          import sys
+          from google.oauth2 import service_account
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaIoBaseDownload
+
+          SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+          FOLDER_MIME = "application/vnd.google-apps.folder"
+          GDOC_MIME = "application/vnd.google-apps.document"
+          BUNDLE_FILENAME = "_sync_bundle.json"
+
+          def get_drive_service():
+              creds_json = os.environ.get("GDRIVE_CREDENTIALS_JSON", "").strip()
+              if not creds_json:
+                  print("Ошибка: секрет GDRIVE_CREDENTIALS_JSON не задан в настройках репозитория.", file=sys.stderr)
+                  sys.exit(1)
+              creds_info = json.loads(creds_json)
+              creds = service_account.Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+              return build("drive", "v3", credentials=creds)
+
+          def list_children(service, folder_id):
+              items = []
+              page_token = None
+              query = f"'{folder_id}' in parents and trashed = false"
+              while True:
+                  resp = (
+                      service.files()
+                      .list(
+                          q=query,
+                          fields="nextPageToken, files(id, name, mimeType, modifiedTime)",
+                          pageToken=page_token,
+                          pageSize=100,
+                      )
+                      .execute()
+                  )
+                  items.extend(resp.get("files", []))
+                  page_token = resp.get("nextPageToken")
+                  if not page_token:
+                      break
+              return items
+
+          def download_file_bytes(service, file_id, mime_type):
+              if mime_type == GDOC_MIME:
+                  request = service.files().export_media(fileId=file_id, mimeType="text/plain")
+              elif mime_type.startswith("application/vnd.google-apps."):
+                  return None
+              else:
+                  request = service.files().get_media(fileId=file_id)
+
+              buf = io.BytesIO()
+              downloader = MediaIoBaseDownload(buf, request)
+              done = False
+              while not done:
+                  _, done = downloader.next_chunk()
+              data = buf.getvalue()
+              if mime_type == GDOC_MIME and data.startswith(b"\xef\xbb\xbf"):
+                  data = data[3:]
+              return data
+
+          def apply_bundle(bundle_bytes, target_root):
+              payload = json.loads(bundle_bytes.decode("utf-8"))
+              files_map = payload.get("files", {})
+              delete_list = payload.get("delete", [])
+              commit_message = payload.get("commit_message", "").strip()
+
+              for rel_path in delete_list:
+                  safe_path = (target_root / rel_path).resolve()
+                  if str(safe_path).startswith(str(target_root.resolve())) and safe_path.is_file():
+                      safe_path.unlink()
+                      print(f"Удален файл: {rel_path}")
+
+              for rel_path, entry in files_map.items():
+                  safe_path = (target_root / rel_path).resolve()
+                  if not str(safe_path).startswith(str(target_root.resolve())):
+                      continue
+                  safe_path.parent.mkdir(parents=True, exist_ok=True)
+                  if isinstance(entry, dict):
+                      encoding = entry.get("encoding", "utf-8")
+                      content = entry.get("content", "")
+                      if encoding == "base64":
+                          safe_path.write_bytes(base64.b64decode(content))
+                      else:
+                          safe_path.write_text(content, encoding="utf-8")
+                  else:
+                      safe_path.write_text(str(entry), encoding="utf-8")
+                  print(f"Обновлен из пакета: {rel_path}")
+
+              if commit_message:
+                  (target_root / ".gdrive_commit_msg.txt").write_text(commit_message, encoding="utf-8")
+
+          def sync_folder_recursive(service, folder_id, local_dir, repo_root):
+              children = list_children(service, folder_id)
+              for item in children:
+                  name = item["name"]
+                  mime = item["mimeType"]
+                  file_id = item["id"]
+
+                  if name in {".git", ".github"}:
+                      continue
+
+                  if mime == FOLDER_MIME:
+                      sub_dir = local_dir / name
+                      sub_dir.mkdir(parents=True, exist_ok=True)
+                      sync_folder_recursive(service, file_id, sub_dir, repo_root)
+                  elif name == BUNDLE_FILENAME:
+                      raw = download_file_bytes(service, file_id, mime)
+                      if raw:
+                          apply_bundle(raw, repo_root)
+                  else:
+                      raw = download_file_bytes(service, file_id, mime)
+                      if raw is not None:
+                          local_dir.mkdir(parents=True, exist_ok=True)
+                          dest = local_dir / name
+                          dest.write_bytes(raw)
+                          print(f"Синхронизирован файл: {dest.relative_to(repo_root)}")
+
+          def main():
+              root_folder_id = os.environ.get("ROOT_DRIVE_FOLDER_ID", "1EliN95P4dO1f0VDkOUWAVcU3fhhz9vfV").strip()
+              repo_subfolder = os.environ.get("REPO_SUBFOLDER", "").strip()
+              repo_root = pathlib.Path.cwd()
+
+              service = get_drive_service()
+              target_folder_id = root_folder_id
+
+              if repo_subfolder:
+                  children = list_children(service, root_folder_id)
+                  matched = [
+                      c for c in children
+                      if c["mimeType"] == FOLDER_MIME and c["name"].lower() == repo_subfolder.lower()
+                  ]
+                  if matched:
+                      target_folder_id = matched[0]["id"]
+                      print(f"Найдена папка проекта '{matched[0]['name']}' ({target_folder_id}).")
+                  else:
+                      print(f"Подпапка '{repo_subfolder}' на Google Диске пока не создана. Пропуск синхронизации.")
+                      return
+
+              sync_folder_recursive(service, target_folder_id, repo_root, repo_root)
+
+          if __name__ == "__main__":
+              main()
+          PYEOF
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "gemini-drive-sync[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Изменений для коммита нет."
+          else
+            COMMIT_MSG="chore(sync): update project files from Google Drive"
+            if [ -f ".gdrive_commit_msg.txt" ]; then
+              COMMIT_MSG=$(cat .gdrive_commit_msg.txt)
+              rm -f .gdrive_commit_msg.txt
+              git add -A
+            fi
+            git commit -m "$COMMIT_MSG"
+            git push
+          fi
