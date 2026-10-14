@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Android-Калькулятор (Material 3 + Самопроверка)</title>
+  <style>
+    :root {
+      --bg: #0B1120;
+      --surface: #111827;
+      --surface-variant: rgba(30, 41, 59, 0.78);
+      --text: #F8FAFC;
+      --text-muted: #94A3B8;
+      --primary: #38BDF8;
+      --primary-container: #0284C7;
+      --on-primary-container: #E0F2FE;
+      --secondary-container: #1E293B;
+      --on-secondary-container: #E2E8F0;
+      --tertiary-container: #334155;
+      --on-tertiary-container: #7DD3FC;
+      --error-container: #7F1D1D;
+      --on-error-container: #FECACA;
+      --error: #F87171;
+      --success: #34D399;
+      --border: rgba(148, 163, 184, 0.16);
+    }
+    [data-theme="light"] {
+      --bg: #F8FAFC;
+      --surface: #FFFFFF;
+      --surface-variant: rgba(226, 232, 240, 0.85);
+      --text: #0F172A;
+      --text-muted: #475569;
+      --primary: #0284C7;
+      --primary-container: #0284C7;
+      --on-primary-container: #FFFFFF;
+      --secondary-container: #F1F5F9;
+      --on-secondary-container: #0F172A;
+      --tertiary-container: #E0F2FE;
+      --on-tertiary-container: #0369A1;
+      --error-container: #FEE2E2;
+      --on-error-container: #B91C1C;
+      --error: #DC2626;
+      --success: #059669;
+      --border: rgba(15, 23, 42, 0.12);
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #060913;
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .phone-frame {
+      width: 100%;
+      max-width: 400px;
+      min-height: 740px;
+      background: var(--bg);
+      color: var(--text);
+      border-radius: 36px;
+      padding: 18px 16px 20px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--border);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+    .top-bar {
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .tonal-btn {
+      flex: 1;
+      border: 1px solid var(--border);
+      background: var(--surface-variant);
+      color: var(--text);
+      padding: 9px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      white-space: nowrap;
+      transition: transform 0.1s ease, background 0.2s ease;
+    }
+    .tonal-btn:active {
+      transform: scale(0.97);
+    }
+    .panel-card {
+      margin-top: 10px;
+      background: var(--surface-variant);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 12px;
+      max-height: 230px;
+      display: none;
+      flex-direction: column;
+    }
+    .panel-card.open {
+      display: flex;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .panel-action {
+      color: var(--primary);
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .panel-list {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-right: 4px;
+    }
+    .panel-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .panel-item:hover {
+      background: rgba(148, 163, 184, 0.14);
+    }
+    .test-title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .test-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .test-val {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-left: 8px;
+      white-space: nowrap;
+    }
+    .display-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: flex-end;
+      padding: 14px 4px 10px;
+      min-height: 150px;
+    }
+    .expression {
+      width: 100%;
+      text-align: right;
+      font-weight: 300;
+      font-size: 46px;
+      line-height: 1.15;
+      word-break: break-all;
+      transition: font-size 0.12s ease;
+    }
+    .preview {
+      width: 100%;
+      text-align: right;
+      font-size: 23px;
+      font-weight: 500;
+      min-height: 32px;
+      margin-top: 8px;
+      color: var(--text-muted);
+    }
+    .preview.error {
+      color: var(--error);
+    }
+    .sub-controls {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 6px;
+    }
+    .text-btn {
+      background: transparent;
+      border: none;
+      color: var(--primary);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 6px 8px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .backspace-btn {
+      background: transparent;
+      border: none;
+      color: var(--primary);
+      font-size: 24px;
+      padding: 4px 10px;
+      cursor: pointer;
+      border-radius: 10px;
+    }
+    .backspace-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+    .keypad {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .key-btn {
+      height: 66px;
+      border: none;
+      border-radius: 22px;
+      font-size: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.08s ease, filter 0.15s ease;
+    }
+    .key-btn:active {
+      transform: scale(0.95);
+      filter: brightness(1.08);
+    }
+    .key-number {
+      background: var(--secondary-container);
+      color: var(--on-secondary-container);
+      font-weight: 400;
+    }
+    .key-action {
+      background: var(--tertiary-container);
+      color: var(--on-tertiary-container);
+      font-weight: 600;
+    }
+    .key-operator {
+      background: var(--tertiary-container);
+      color: var(--on-tertiary-container);
+      font-size: 28px;
+      font-weight: 600;
+    }
+    .key-clear {
+      background: var(--error-container);
+      color: var(--on-error-container);
+      font-weight: 600;
+    }
+    .key-equals {
+      background: var(--primary-container);
+      color: var(--on-primary-container);
+      font-size: 28px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="phone-frame" id="appFrame" data-theme="dark">
+    <div>
+      <div class="top-bar">
+        <button class="tonal-btn" id="historyBtn" onclick="toggleHistory()">История (0)</button>
+        <button class="tonal-btn" id="testsBtn" onclick="toggleTests()">Тесты (12/12)</button>
+        <button class="tonal-btn" id="themeBtn" onclick="cycleTheme()">Тема: Тёмная</button>
+      </div>
+
+      <!-- Панель самопроверки -->
+      <div class="panel-card" id="testsPanel">
+        <div class="panel-header">
+          <span id="testsSummary">Самопроверка (12 из 12 успешно)</span>
+          <span class="panel-action" onclick="runSelfTests()">Проверить снова</span>
+        </div>
+        <div class="panel-list" id="testsList"></div>
+      </div>
+
+      <!-- Панель истории -->
+      <div class="panel-card" id="historyPanel">
+        <div class="panel-header">
+          <span>Журнал вычислений</span>
+          <span class="panel-action" onclick="clearHistory()">Очистить</span>
+        </div>
+        <div class="panel-list" id="historyList"></div>
+      </div>
+    </div>
+
+    <div class="display-area">
+      <div class="expression" id="exprDisplay">0</div>
+      <div class="preview" id="previewDisplay"></div>
+      <div class="sub-controls">
+        <button class="text-btn" onclick="onToggleSign()">+/− Знак</button>
+        <button class="backspace-btn" id="backspaceBtn" onclick="onBackspace()" disabled>⌫</button>
+      </div>
+    </div>
+
+    <div class="keypad">
+      <button class="key-btn key-clear" onclick="onClear()">AC</button>
+      <button class="key-btn key-action" onclick="onParentheses()">( )</button>
+      <button class="key-btn key-action" onclick="onPercent()">%</button>
+      <button class="key-btn key-operator" onclick="onOperator('÷')">÷</button>
+
+      <button class="key-btn key-number" onclick="onDigit('7')">7</button>
+      <button class="key-btn key-number" onclick="onDigit('8')">8</button>
+      <button class="key-btn key-number" onclick="onDigit('9')">9</button>
+      <button class="key-btn key-operator" onclick="onOperator('×')">×</button>
+
+      <button class="key-btn key-number" onclick="onDigit('4')">4</button>
+      <button class="key-btn key-number" onclick="onDigit('5')">5</button>
+      <button class="key-btn key-number" onclick="onDigit('6')">6</button>
+      <button class="key-btn key-operator" onclick="onOperator('−')">−</button>
+
+      <button class="key-btn key-number" onclick="onDigit('1')">1</button>
+      <button class="key-btn key-number" onclick="onDigit('2')">2</button>
+      <button class="key-btn key-number" onclick="onDigit('3')">3</button>
+      <button class="key-btn key-operator" onclick="onOperator('+')">+</button>
+
+      <button class="key-btn key-number" onclick="onDigit('00')">00</button>
+      <button class="key-btn key-number" onclick="onDigit('0')">0</button>
+      <button class="key-btn key-number" onclick="onDecimalPoint()">.</button>
+      <button class="key-btn key-equals" onclick="onEquals()">=</button>
+    </div>
+  </div>
+
+  <script>
+    // Полная реализация алгоритма CalculatorEngine.kt + CalculatorViewModel.kt
+    const OPERATORS = new Set(['+', '−', '×', '÷']);
+    let expression = "";
+    let preview = "";
+    let isError = false;
+    let history = [];
+    let showHistoryPanel = false;
+    let showTestsPanel = false;
+    let themeMode = "DARK";
+
+    const DEFAULT_TEST_SUITE = [
+      { id: 1, title: "Сложение и вычитание", expression: "125+375−100", expected: "400", expectError: false },
+      { id: 2, title: "Приоритет операций", expression: "2+3×4", expected: "14", expectError: false },
+      { id: 3, title: "Вычисление со скобками", expression: "(2+3)×4", expected: "20", expectError: false },
+      { id: 4, title: "Дробное деление", expression: "5÷2", expected: "2.5", expectError: false },
+      { id: 5, title: "Точность BigDecimal (0.1 + 0.2)", expression: "0.1+0.2", expected: "0.3", expectError: false },
+      { id: 6, title: "Прибавление процента (+10%)", expression: "200+10%", expected: "220", expectError: false },
+      { id: 7, title: "Скидка в процентах (−15%)", expression: "200−15%", expected: "170", expectError: false },
+      { id: 8, title: "Умножение на процент", expression: "200×10%", expected: "20", expectError: false },
+      { id: 9, title: "Перевод процента в долю", expression: "50%", expected: "0.5", expectError: false },
+      { id: 10, title: "Неявное умножение и автоскобки", expression: "2(3+4", expected: "14", expectError: false },
+      { id: 11, title: "Отрицательные числа (унарный минус)", expression: "5×(−2)", expected: "-10", expectError: false },
+      { id: 12, title: "Защита от деления на ноль", expression: "10÷0", expected: "Деление на ноль", expectError: true }
+    ];
+
+    function formatNumber(val) {
+      if (!isFinite(val)) throw new Error("Деление на ноль");
+      const rounded = Number(Math.round(Number(val + "e10")) + "e-10");
+      if (Object.is(rounded, -0) || rounded === 0) return "0";
+      return String(rounded);
+    }
+
+    function evaluateExpression(raw) {
+      let cleaned = raw
+        .replace(/×/g, "*")
+        .replace(/÷/g, "/")
+        .replace(/−/g, "-")
+        .replace(/,/g, ".")
+        .replace(/\s+/g, "");
+
+      if (!cleaned) return { ok: true, formatted: "0" };
+
+      const openCount = (cleaned.match(/\(/g) || []).length;
+      const closeCount = (cleaned.match(/\)/g) || []).length;
+      if (openCount > closeCount) {
+        cleaned += ")".repeat(openCount - closeCount);
+      }
+
+      try {
+        const rawTokens = [];
+        let i = 0;
+        while (i < cleaned.length) {
+          const c = cleaned[i];
+          if ((c >= '0' && c <= '9') || c === '.') {
+            let numStr = "";
+            let dotCount = 0;
+            while (i < cleaned.length && ((cleaned[i] >= '0' && cleaned[i] <= '9') || cleaned[i] === '.')) {
+              if (cleaned[i] === '.') dotCount++;
+              if (dotCount > 1) throw new Error("Некорректное число");
+              numStr += cleaned[i];
+              i++;
+            }
+            if (numStr === ".") throw new Error("Некорректное число");
+            rawTokens.push({ type: "num", value: parseFloat(numStr) });
+            continue;
+          } else if (c === '(') {
+            rawTokens.push({ type: "lparen" });
+          } else if (c === ')') {
+            rawTokens.push({ type: "rparen" });
+          } else if (c === '%') {
+            rawTokens.push({ type: "pct" });
+          } else if (['+', '-', '*', '/'].includes(c)) {
+            const prev = rawTokens[rawTokens.length - 1];
+            const isUnary = !prev || prev.type === "lparen" || prev.type === "op";
+            if (isUnary && (c === '-' || c === '+')) {
+              if (c === '-') rawTokens.push({ type: "op", op: '~' });
+            } else {
+              rawTokens.push({ type: "op", op: c });
+            }
+          } else {
+            throw new Error("Ошибка выражения");
+          }
+          i++;
+        }
+
+        const tokens = [];
+        for (let idx = 0; idx < rawTokens.length; idx++) {
+          const curr = rawTokens[idx];
+          if (idx > 0) {
+            const prev = rawTokens[idx - 1];
+            const prevIsVal = prev.type === "num" || prev.type === "rparen" || prev.type === "pct";
+            const currStartsVal = curr.type === "lparen" || curr.type === "num";
+            if (prevIsVal && currStartsVal) {
+              tokens.push({ type: "op", op: '*' });
+            }
+          }
+          tokens.push(curr);
+        }
+
+        const prec = (op) => op === '~' ? 3 : (op === '*' || op === '/' ? 2 : 1);
+        const rpn = [];
+        const stack = [];
+        for (const t of tokens) {
+          if (t.type === "num" || t.type === "pct") {
+            rpn.push(t);
+          } else if (t.type === "op") {
+            while (stack.length > 0) {
+              const top = stack[stack.length - 1];
+              if (top.type === "op") {
+                const p1 = prec(t.op), p2 = prec(top.op);
+                if (p2 > p1 || (p1 === p2 && t.op !== '~')) {
+                  rpn.push(stack.pop());
+                  continue;
+                }
+              }
+              break;
+            }
+            stack.push(t);
+          } else if (t.type === "lparen") {
+            stack.push(t);
+          } else if (t.type === "rparen") {
+            let found = false;
+            while (stack.length > 0) {
+              const top = stack.pop();
+              if (top.type === "lparen") { found = true; break; }
+              rpn.push(top);
+            }
+            if (!found) throw new Error("Непарные скобки");
+          }
+        }
+        while (stack.length > 0) {
+          const top = stack.pop();
+          if (top.type === "lparen" || top.type === "rparen") throw new Error("Непарные скобки");
+          rpn.push(top);
+        }
+
+        const evalStack = [];
+        for (const t of rpn) {
+          if (t.type === "num") {
+            evalStack.push({ value: t.value, isPct: false });
+          } else if (t.type === "pct") {
+            if (!evalStack.length) throw new Error("Ошибка процента");
+            const item = evalStack.pop();
+            evalStack.push({ value: item.value / 100, isPct: true });
+          } else if (t.type === "op") {
+            if (t.op === '~') {
+              if (!evalStack.length) throw new Error("Неполное выражение");
+              const a = evalStack.pop();
+              evalStack.push({ value: -a.value, isPct: a.isPct });
+            } else {
+              if (evalStack.length < 2) throw new Error("Неполное выражение");
+              const b = evalStack.pop();
+              const a = evalStack.pop();
+              let res = 0;
+              if (t.op === '+') {
+                res = a.value + (b.isPct ? a.value * b.value : b.value);
+              } else if (t.op === '-') {
+                res = a.value - (b.isPct ? a.value * b.value : b.value);
+              } else if (t.op === '*') {
+                res = a.value * b.value;
+              } else if (t.op === '/') {
+                if (Math.abs(b.value) < 1e-15) return { ok: false, message: "Деление на ноль" };
+                res = a.value / b.value;
+              }
+              evalStack.push({ value: res, isPct: false });
+            }
+          }
+        }
+        if (evalStack.length !== 1) throw new Error("Неполное выражение");
+        return { ok: true, formatted: formatNumber(evalStack[0].value) };
+      } catch (e) {
+        return { ok: false, message: e.message || "Ошибка выражения" };
+      }
+    }
+
+    function updatePreview() {
+      if (!expression) {
+        preview = "";
+        isError = false;
+        render();
+        return;
+      }
+      const hasOp = [...expression].some(ch => OPERATORS.has(ch) || ch === '(' || ch === ')' || ch === '%');
+      if (!hasOp) {
+        preview = "";
+        isError = false;
+        render();
+        return;
+      }
+      const res = evaluateExpression(expression);
+      if (res.ok) {
+        preview = res.formatted !== expression ? res.formatted : "";
+        isError = false;
+      } else {
+        preview = "";
+        isError = false;
+      }
+      render();
+    }
+
+    function onDigit(d) {
+      if (isError) { expression = ""; isError = false; }
+      expression += d;
+      updatePreview();
+    }
+
+    function getLastNumberSegment(expr) {
+      let s = "";
+      for (let i = expr.length - 1; i >= 0; i--) {
+        const c = expr[i];
+        if ((c >= '0' && c <= '9') || c === '.') s = c + s;
+        else break;
+      }
+      return s;
+    }
+
+    function onDecimalPoint() {
+      if (isError) { expression = "0."; isError = false; updatePreview(); return; }
+      const seg = getLastNumberSegment(expression);
+      if (seg.includes('.')) return;
+      expression += seg.length === 0 ? "0." : ".";
+      updatePreview();
+    }
+
+    function onOperator(op) {
+      if (isError) { expression = ""; isError = false; }
+      if (!expression) {
+        if (op === '−') { expression = "−"; render(); }
+        return;
+      }
+      const last = expression[expression.length - 1];
+      if (OPERATORS.has(last)) {
+        expression = expression.slice(0, -1) + op;
+      } else if (last === '(' && op === '−') {
+        expression += op;
+      } else if (last !== '(' && last !== '.') {
+        expression += op;
+      }
+      updatePreview();
+    }
+
+    function onPercent() {
+      if (isError || !expression) return;
+      const last = expression[expression.length - 1];
+      if ((last >= '0' && last <= '9') || last === ')') {
+        expression += "%";
+        updatePreview();
+      }
+    }
+
+    function onParentheses() {
+      if (isError) { expression = "("; isError = false; render(); return; }
+      const openCount = (expression.match(/\(/g) || []).length;
+      const closeCount = (expression.match(/\)/g) || []).length;
+      const last = expression[expression.length - 1];
+      if (!last || OPERATORS.has(last) || last === '(') {
+        expression += "(";
+      } else if (openCount > closeCount && ((last >= '0' && last <= '9') || last === ')' || last === '%')) {
+        expression += ")";
+      } else {
+        expression += "×(";
+      }
+      updatePreview();
+    }
+
+    function onToggleSign() {
+      if (isError) { expression = ""; isError = false; render(); return; }
+      if (!expression) { expression = "−"; render(); return; }
+      const isSimpleNum = (s) => [...s].every(c => (c >= '0' && c <= '9') || c === '.');
+      if (expression.startsWith("−") && isSimpleNum(expression.slice(1))) {
+        expression = expression.slice(1);
+      } else if (isSimpleNum(expression)) {
+        expression = "−" + expression;
+      } else {
+        expression = "−(" + expression + ")";
+      }
+      updatePreview();
+    }
+
+    function onBackspace() {
+      if (isError) { onClear(); return; }
+      if (expression.length > 0) {
+        expression = expression.slice(0, -1);
+        updatePreview();
+      }
+    }
+
+    function onClear() {
+      expression = "";
+      preview = "";
+      isError = false;
+      render();
+    }
+
+    function onEquals() {
+      if (!expression || isError) return;
+      const res = evaluateExpression(expression);
+      if (res.ok) {
+        if (res.formatted !== expression) {
+          history.unshift({ expression, result: res.formatted });
+        }
+        expression = res.formatted;
+        preview = "";
+        isError = false;
+      } else {
+        preview = res.message;
+        isError = true;
+      }
+      render();
+    }
+
+    function toggleHistory() {
+      showHistoryPanel = !showHistoryPanel;
+      if (showHistoryPanel) showTestsPanel = false;
+      render();
+    }
+
+    function toggleTests() {
+      runSelfTests();
+      showTestsPanel = !showTestsPanel;
+      if (showTestsPanel) showHistoryPanel = false;
+      render();
+    }
+
+    function clearHistory() {
+      history = [];
+      render();
+    }
+
+    function selectHistory(idx) {
+      expression = history[idx].result;
+      preview = "";
+      isError = false;
+      showHistoryPanel = false;
+      render();
+    }
+
+    function selectTestCase(idx) {
+      const tc = DEFAULT_TEST_SUITE[idx];
+      expression = tc.expression;
+      const res = evaluateExpression(expression);
+      if (res.ok) {
+        preview = res.formatted;
+        isError = false;
+      } else {
+        preview = res.message;
+        isError = true;
+      }
+      showTestsPanel = false;
+      render();
+    }
+
+    function cycleTheme() {
+      themeMode = themeMode === "DARK" ? "LIGHT" : "DARK";
+      document.getElementById("appFrame").setAttribute("data-theme", themeMode === "DARK" ? "dark" : "light");
+      document.getElementById("themeBtn").textContent = themeMode === "DARK" ? "Тема: Тёмная" : "Тема: Светлая";
+    }
+
+    function runSelfTests() {
+      const listEl = document.getElementById("testsList");
+      listEl.innerHTML = "";
+      let passedCount = 0;
+      DEFAULT_TEST_SUITE.forEach((tc, idx) => {
+        const res = evaluateExpression(tc.expression);
+        const actual = res.ok ? res.formatted : res.message;
+        const passed = tc.expectError ? (!res.ok && actual === tc.expected) : (res.ok && actual === tc.expected);
+        if (passed) passedCount++;
+        const item = document.createElement("div");
+        item.className = "panel-item";
+        item.onclick = () => selectTestCase(idx);
+        item.innerHTML = `
+          <div>
+            <div class="test-title" style="color: ${passed ? 'var(--text)' : 'var(--error)'}">
+              ${passed ? '✓' : '✗'} ${tc.title}
+            </div>
+            <div class="test-sub">Нажмите, чтобы проверить: ${tc.expression}</div>
+          </div>
+          <div class="test-val">= ${actual}</div>
+        `;
+        listEl.appendChild(item);
+      });
+      document.getElementById("testsSummary").textContent = `Самопроверка (${passedCount} из ${DEFAULT_TEST_SUITE.length} успешно)`;
+      document.getElementById("testsBtn").textContent = showTestsPanel ? "Закрыть тесты" : `Тесты (${passedCount}/${DEFAULT_TEST_SUITE.length})`;
+    }
+
+    function render() {
+      const exprEl = document.getElementById("exprDisplay");
+      const text = expression || "0";
+      exprEl.textContent = text;
+      exprEl.style.fontSize = text.length > 18 ? "28px" : (text.length > 12 ? "36px" : "46px");
+
+      const prevEl = document.getElementById("previewDisplay");
+      prevEl.textContent = preview ? (isError ? preview : `= ${preview}`) : "";
+      prevEl.className = isError ? "preview error" : "preview";
+
+      document.getElementById("backspaceBtn").disabled = (!expression && !isError);
+      document.getElementById("historyBtn").textContent = showHistoryPanel ? "Скрыть" : `История (${history.length})`;
+
+      document.getElementById("historyPanel").className = showHistoryPanel ? "panel-card open" : "panel-card";
+      document.getElementById("testsPanel").className = showTestsPanel ? "panel-card open" : "panel-card";
+
+      const histList = document.getElementById("historyList");
+      if (history.length === 0) {
+        histList.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:18px 0;font-size:13px;">Пока нет вычислений</div>`;
+      } else {
+        histList.innerHTML = history.map((h, i) => `
+          <div class="panel-item" onclick="selectHistory(${i})">
+            <span style="color:var(--text-muted);font-size:14px;">${h.expression}</span>
+            <span style="font-weight:600;font-size:15px;">= ${h.result}</span>
+          </div>
+        `).join("");
+      }
+      runSelfTests();
+    }
+
+    render();
+  </script>
+</body>
+</html>
