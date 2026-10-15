@@ -50,7 +50,7 @@ jobs:
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaIoBaseDownload
 
-          SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+          SCOPES = ["https://www.googleapis.com/auth/drive"]
           FOLDER_MIME = "application/vnd.google-apps.folder"
           GDOC_MIME = "application/vnd.google-apps.document"
           BUNDLE_FILENAME = "_sync_bundle.json"
@@ -74,6 +74,7 @@ jobs:
                       .list(
                           q=query,
                           fields="nextPageToken, files(id, name, mimeType, modifiedTime)",
+                          orderBy="modifiedTime desc",
                           pageToken=page_token,
                           pageSize=100,
                       )
@@ -103,17 +104,45 @@ jobs:
                   data = data[3:]
               return data
 
+          def cleanup_old_drive_file(service, file_id, file_name, folder_id):
+              try:
+                  service.files().delete(fileId=file_id).execute()
+                  print(f"Удален устаревший пакет с Google Диска: {file_name} ({file_id})")
+                  return
+              except Exception:
+                  pass
+              try:
+                  service.files().update(fileId=file_id, body={"trashed": True}).execute()
+                  print(f"Перемещен в корзину устаревший пакет: {file_name} ({file_id})")
+                  return
+              except Exception:
+                  pass
+              try:
+                  service.files().update(
+                      fileId=file_id,
+                      removeParents=folder_id,
+                      body={"name": f"_archived_{file_name}"},
+                  ).execute()
+                  print(f"Убран из рабочей папки устаревший пакет: {file_name} ({file_id})")
+              except Exception as exc:
+                  print(f"Предупреждение: не удалось очистить {file_name} ({file_id}): {exc}")
+
           def apply_bundle(bundle_bytes, target_root):
               payload = json.loads(bundle_bytes.decode("utf-8"))
               files_map = payload.get("files", {})
               delete_list = payload.get("delete", [])
               commit_message = payload.get("commit_message", "").strip()
 
+              # Автоматически удаляем случайно попавшие в репозиторий старые бандлы
+              for leftover in ["_old_bundle.json", "_sync_bundle.json"]:
+                  if leftover not in files_map and leftover not in delete_list:
+                      delete_list.append(leftover)
+
               for rel_path in delete_list:
                   safe_path = (target_root / rel_path).resolve()
                   if str(safe_path).startswith(str(target_root.resolve())) and safe_path.is_file():
                       safe_path.unlink()
-                      print(f"Удален файл: {rel_path}")
+                      print(f"Удален файл из репозитория: {rel_path}")
 
               for rel_path, entry in files_map.items():
                   safe_path = (target_root / rel_path).resolve()
@@ -136,22 +165,48 @@ jobs:
 
           def sync_folder_recursive(service, folder_id, local_dir, repo_root):
               children = list_children(service, folder_id)
+
+              # Отделяем активные и старые бандлы от обычных файлов
+              sync_bundles = [
+                  c for c in children
+                  if c["mimeType"] != FOLDER_MIME and c["name"] == BUNDLE_FILENAME
+              ]
+              old_bundles = [
+                  c for c in children
+                  if c["mimeType"] != FOLDER_MIME
+                  and c["name"] != BUNDLE_FILENAME
+                  and (c["name"].startswith("_old_bundle") or c["name"].endswith("_bundle.json"))
+              ]
+
+              # Применяем только самый свежий _sync_bundle.json (список уже отсортирован по modifiedTime desc)
+              if sync_bundles:
+                  newest = sync_bundles[0]
+                  raw = download_file_bytes(service, newest["id"], newest["mimeType"])
+                  if raw:
+                      print(f"Применяется актуальный пакет {newest['name']} ({newest['id']}, {newest.get('modifiedTime')})")
+                      apply_bundle(raw, repo_root)
+                  # Все остальные дубли _sync_bundle.json помечаем на очистку
+                  old_bundles.extend(sync_bundles[1:])
+
+              # Очищаем устаревшие бандлы из рабочей папки Google Диска
+              for old_item in old_bundles:
+                  cleanup_old_drive_file(service, old_item["id"], old_item["name"], folder_id)
+
+              # Синхронизируем обычные файлы и вложенные папки (игнорируя все служебные бандлы)
               for item in children:
                   name = item["name"]
                   mime = item["mimeType"]
                   file_id = item["id"]
 
-                  if name in {".git", ".github"}:
+                  if name in {".git", ".github", BUNDLE_FILENAME}:
+                      continue
+                  if name.startswith("_old_bundle") or name.endswith("_bundle.json"):
                       continue
 
                   if mime == FOLDER_MIME:
                       sub_dir = local_dir / name
                       sub_dir.mkdir(parents=True, exist_ok=True)
                       sync_folder_recursive(service, file_id, sub_dir, repo_root)
-                  elif name == BUNDLE_FILENAME:
-                      raw = download_file_bytes(service, file_id, mime)
-                      if raw:
-                          apply_bundle(raw, repo_root)
                   else:
                       raw = download_file_bytes(service, file_id, mime)
                       if raw is not None:
@@ -204,3 +259,4 @@ jobs:
             git commit -m "$COMMIT_MSG"
             git push
           fi
+
