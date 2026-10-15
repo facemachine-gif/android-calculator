@@ -46,6 +46,7 @@ jobs:
           import os
           import pathlib
           import sys
+          from google.oauth2 import credentials as oauth_credentials
           from google.oauth2 import service_account
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaIoBaseDownload
@@ -61,7 +62,10 @@ jobs:
                   print("Ошибка: секрет GDRIVE_CREDENTIALS_JSON не задан в настройках репозитория.", file=sys.stderr)
                   sys.exit(1)
               creds_info = json.loads(creds_json)
-              creds = service_account.Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+              if creds_info.get("type") == "service_account":
+                  creds = service_account.Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+              else:
+                  creds = oauth_credentials.Credentials.from_authorized_user_info(creds_info, scopes=SCOPES)
               return build("drive", "v3", credentials=creds)
 
           def list_children(service, folder_id):
