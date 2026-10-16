@@ -26,25 +26,30 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -290,12 +295,6 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
     val haptic = LocalHapticFeedback.current
     val isRu = vm.language == AppLanguage.RU
 
-    val buttonShape: Shape = when (vm.buttonShapeMode) {
-        ButtonShapeMode.ROUND -> CircleShape
-        ButtonShapeMode.ROUNDED -> RoundedCornerShape(18.dp)
-        ButtonShapeMode.SQUARE -> RoundedCornerShape(5.dp)
-    }
-
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -315,7 +314,6 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 1. History button (left, kept as is)
                 FilledTonalButton(
                     onClick = {
                         showHistory = !showHistory
@@ -338,7 +336,6 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                     )
                 }
 
-                // 2. Engineering calculator toggle button (center, between History and Settings)
                 FilledTonalButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -371,7 +368,6 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                     )
                 }
 
-                // 3. Settings gear button (right, dropdown panel like History)
                 FilledTonalButton(
                     onClick = {
                         showSettings = !showSettings
@@ -478,7 +474,7 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                 }
             }
 
-            // Expandable Settings Panel (drops down just like History)
+            // Expandable Settings Panel
             AnimatedVisibility(visible = showSettings) {
                 Card(
                     modifier = Modifier
@@ -496,7 +492,6 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // 1. Language (RU / EN)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -527,7 +522,6 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                             }
                         }
 
-                        // 2. Theme Mode (Auto / Dark / Light)
                         Text(
                             text = if (isRu) "Режим темы" else "Theme Mode",
                             fontSize = 12.sp,
@@ -561,7 +555,6 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                             }
                         }
 
-                        // 3. Visual Color Palette Swatches (no text labels, pure color badges)
                         Text(
                             text = if (isRu) "Палитра темы" else "Theme Palette",
                             fontSize = 12.sp,
@@ -590,7 +583,6 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                             }
                         }
 
-                        // 4. Button Shape (Round / Rounded / Square)
                         Text(
                             text = if (isRu) "Форма кнопок" else "Button Shape",
                             fontSize = 12.sp,
@@ -670,7 +662,6 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                         .height(28.dp)
                 )
 
-                // Utility Row: Sign toggle on left, Backspace on right
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -710,198 +701,195 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                 }
             }
 
-            // Fixed-Area Keypad Container:
-            // Standard mode = 5 rows x 4 cols.
-            // Engineering mode = 6 rows x 5 cols (1 row on top + 1 col on left, main buttons smoothly shrink).
-            val sciProgress by animateFloatAsState(
+            // State holder for smooth transition — read ONLY inside Layout/Placement, not in Composition!
+            val sciProgressState = animateFloatAsState(
                 targetValue = if (vm.isScientificMode) 1f else 0f,
-                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
                 label = "scientificLayoutProgress"
             )
 
-            val topSciButtons = listOf(
-                CalcButtonSpec(if (vm.isDegreeMode) "DEG" else "RAD", CalcButtonKind.SCIENTIFIC) { vm.toggleDegreeMode() },
-                CalcButtonSpec("sin", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sin") },
-                CalcButtonSpec("cos", CalcButtonKind.SCIENTIFIC) { vm.onFunction("cos") },
-                CalcButtonSpec("tan", CalcButtonKind.SCIENTIFIC) { vm.onFunction("tan") },
-                CalcButtonSpec("ln", CalcButtonKind.SCIENTIFIC) { vm.onFunction("ln") }
-            )
-
-            val leftSciButtons = listOf(
-                CalcButtonSpec("√x", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sqrt") },
-                CalcButtonSpec("xʸ", CalcButtonKind.SCIENTIFIC) { vm.onPower() },
-                CalcButtonSpec("log", CalcButtonKind.SCIENTIFIC) { vm.onFunction("log") },
-                CalcButtonSpec("n!", CalcButtonKind.SCIENTIFIC) { vm.onFactorial() },
-                CalcButtonSpec("π", CalcButtonKind.SCIENTIFIC) { vm.onConstant("π") }
-            )
-
-            val mainRows = listOf(
-                listOf(
-                    CalcButtonSpec("AC", CalcButtonKind.CLEAR) { vm.onClear() },
-                    CalcButtonSpec("( )", CalcButtonKind.ACTION) { vm.onParentheses() },
-                    CalcButtonSpec("%", CalcButtonKind.ACTION) { vm.onPercent() },
-                    CalcButtonSpec("÷", CalcButtonKind.OPERATOR) { vm.onOperator("÷") }
-                ),
-                listOf(
-                    CalcButtonSpec("7", CalcButtonKind.NUMBER) { vm.onDigit("7") },
-                    CalcButtonSpec("8", CalcButtonKind.NUMBER) { vm.onDigit("8") },
-                    CalcButtonSpec("9", CalcButtonKind.NUMBER) { vm.onDigit("9") },
-                    CalcButtonSpec("×", CalcButtonKind.OPERATOR) { vm.onOperator("×") }
-                ),
-                listOf(
-                    CalcButtonSpec("4", CalcButtonKind.NUMBER) { vm.onDigit("4") },
-                    CalcButtonSpec("5", CalcButtonKind.NUMBER) { vm.onDigit("5") },
-                    CalcButtonSpec("6", CalcButtonKind.NUMBER) { vm.onDigit("6") },
-                    CalcButtonSpec("−", CalcButtonKind.OPERATOR) { vm.onOperator("−") }
-                ),
-                listOf(
-                    CalcButtonSpec("1", CalcButtonKind.NUMBER) { vm.onDigit("1") },
-                    CalcButtonSpec("2", CalcButtonKind.NUMBER) { vm.onDigit("2") },
-                    CalcButtonSpec("3", CalcButtonKind.NUMBER) { vm.onDigit("3") },
-                    CalcButtonSpec("+", CalcButtonKind.OPERATOR) { vm.onOperator("+") }
-                ),
-                listOf(
-                    CalcButtonSpec("00", CalcButtonKind.NUMBER) { vm.onDigit("00") },
-                    CalcButtonSpec("0", CalcButtonKind.NUMBER) { vm.onDigit("0") },
-                    CalcButtonSpec(".", CalcButtonKind.NUMBER) { vm.onDecimalPoint() },
-                    CalcButtonSpec("=", CalcButtonKind.EQUALS) { vm.onEquals() }
-                )
-            )
-
-            BoxWithConstraints(
+            AnimatedKeypadGrid(
+                vm = vm,
+                sciProgressState = sciProgressState,
+                isDarkTheme = isDarkTheme,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(fixedKeypadHeight)
-            ) {
-                val areaW = maxWidth
-                val areaH = maxHeight
-                val gap = 10.dp * (1f - sciProgress) + 8.dp * sciProgress
+            )
+        }
+    }
+}
 
-                val cols = 4f + sciProgress // 4.0 -> 5.0
-                val rows = 5f + sciProgress // 5.0 -> 6.0
+@Composable
+fun AnimatedKeypadGrid(
+    vm: CalculatorViewModel,
+    sciProgressState: State<Float>,
+    isDarkTheme: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val shapeMode = vm.buttonShapeMode
+    val buttonShape: Shape = remember(shapeMode) {
+        when (shapeMode) {
+            ButtonShapeMode.ROUND -> CircleShape
+            ButtonShapeMode.ROUNDED -> RoundedCornerShape(18.dp)
+            ButtonShapeMode.SQUARE -> RoundedCornerShape(5.dp)
+        }
+    }
 
-                val cellW = (areaW - gap * (cols - 1f)) / cols
-                val cellH = (areaH - gap * (rows - 1f)) / rows
-                val stepX = cellW + gap
-                val stepY = cellH + gap
+    val topSciButtons = remember(vm.isDegreeMode) {
+        listOf(
+            CalcButtonSpec(if (vm.isDegreeMode) "DEG" else "RAD", CalcButtonKind.SCIENTIFIC) { vm.toggleDegreeMode() },
+            CalcButtonSpec("sin", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sin") },
+            CalcButtonSpec("cos", CalcButtonKind.SCIENTIFIC) { vm.onFunction("cos") },
+            CalcButtonSpec("tan", CalcButtonKind.SCIENTIFIC) { vm.onFunction("tan") },
+            CalcButtonSpec("ln", CalcButtonKind.SCIENTIFIC) { vm.onFunction("ln") }
+        )
+    }
 
-                val isRoundMode = vm.buttonShapeMode == ButtonShapeMode.ROUND
-                val fontScale = 1f - 0.16f * sciProgress
+    val leftSciButtons = remember {
+        listOf(
+            CalcButtonSpec("√x", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sqrt") },
+            CalcButtonSpec("xʸ", CalcButtonKind.SCIENTIFIC) { vm.onPower() },
+            CalcButtonSpec("log", CalcButtonKind.SCIENTIFIC) { vm.onFunction("log") },
+            CalcButtonSpec("n!", CalcButtonKind.SCIENTIFIC) { vm.onFactorial() },
+            CalcButtonSpec("π", CalcButtonKind.SCIENTIFIC) { vm.onConstant("π") }
+        )
+    }
 
-                // 1. Top Scientific Row (5 buttons across top: index 0..4)
-                if (sciProgress > 0.01f) {
-                    for (idx in topSciButtons.indices) {
-                        val btn = topSciButtons[idx]
-                        val xPos = if (idx == 0) 0.dp else stepX * ((idx - 1).toFloat() + sciProgress)
-                        val yPos = 0.dp
-                        Box(
-                            modifier = Modifier
-                                .offset(x = xPos, y = yPos)
-                                .size(width = cellW, height = cellH)
-                                .graphicsLayer {
-                                    alpha = sciProgress
-                                    val s = 0.65f + 0.35f * sciProgress
-                                    scaleX = s
-                                    scaleY = s
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            val btnModifier = if (isRoundMode) {
-                                Modifier.size(minOf(cellW, cellH))
-                            } else {
-                                Modifier.fillMaxSize()
-                            }
-                            CalculatorKeyButton(
-                                spec = btn,
-                                shape = buttonShape,
-                                isDarkTheme = isDarkTheme,
-                                fontSizeOverride = (15f * fontScale).sp,
-                                modifier = btnModifier,
-                                onTap = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    btn.onClick()
-                                }
-                            )
-                        }
+    val mainButtons = remember {
+        listOf(
+            CalcButtonSpec("AC", CalcButtonKind.CLEAR) { vm.onClear() },
+            CalcButtonSpec("( )", CalcButtonKind.ACTION) { vm.onParentheses() },
+            CalcButtonSpec("%", CalcButtonKind.ACTION) { vm.onPercent() },
+            CalcButtonSpec("÷", CalcButtonKind.OPERATOR) { vm.onOperator("÷") },
+            CalcButtonSpec("7", CalcButtonKind.NUMBER) { vm.onDigit("7") },
+            CalcButtonSpec("8", CalcButtonKind.NUMBER) { vm.onDigit("8") },
+            CalcButtonSpec("9", CalcButtonKind.NUMBER) { vm.onDigit("9") },
+            CalcButtonSpec("×", CalcButtonKind.OPERATOR) { vm.onOperator("×") },
+            CalcButtonSpec("4", CalcButtonKind.NUMBER) { vm.onDigit("4") },
+            CalcButtonSpec("5", CalcButtonKind.NUMBER) { vm.onDigit("5") },
+            CalcButtonSpec("6", CalcButtonKind.NUMBER) { vm.onDigit("6") },
+            CalcButtonSpec("−", CalcButtonKind.OPERATOR) { vm.onOperator("−") },
+            CalcButtonSpec("1", CalcButtonKind.NUMBER) { vm.onDigit("1") },
+            CalcButtonSpec("2", CalcButtonKind.NUMBER) { vm.onDigit("2") },
+            CalcButtonSpec("3", CalcButtonKind.NUMBER) { vm.onDigit("3") },
+            CalcButtonSpec("+", CalcButtonKind.OPERATOR) { vm.onOperator("+") },
+            CalcButtonSpec("00", CalcButtonKind.NUMBER) { vm.onDigit("00") },
+            CalcButtonSpec("0", CalcButtonKind.NUMBER) { vm.onDigit("0") },
+            CalcButtonSpec(".", CalcButtonKind.NUMBER) { vm.onDecimalPoint() },
+            CalcButtonSpec("=", CalcButtonKind.EQUALS) { vm.onEquals() }
+        )
+    }
+
+    // All 30 buttons remain permanently composed in the tree so toggling modes never triggers composition spikes
+    Layout(
+        modifier = modifier,
+        content = {
+            for (btn in topSciButtons) {
+                CalculatorKeyButton(
+                    spec = btn,
+                    shape = buttonShape,
+                    shapeMode = shapeMode,
+                    isDarkTheme = isDarkTheme,
+                    enabled = vm.isScientificMode,
+                    fontSizeOverride = 14.sp,
+                    onTap = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        btn.onClick()
                     }
+                )
+            }
+            for (btn in leftSciButtons) {
+                CalculatorKeyButton(
+                    spec = btn,
+                    shape = buttonShape,
+                    shapeMode = shapeMode,
+                    isDarkTheme = isDarkTheme,
+                    enabled = vm.isScientificMode,
+                    fontSizeOverride = 14.sp,
+                    onTap = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        btn.onClick()
+                    }
+                )
+            }
+            for (btn in mainButtons) {
+                val baseFont = if (btn.kind == CalcButtonKind.OPERATOR || btn.kind == CalcButtonKind.EQUALS) {
+                    24.sp
+                } else {
+                    20.sp
+                }
+                CalculatorKeyButton(
+                    spec = btn,
+                    shape = buttonShape,
+                    shapeMode = shapeMode,
+                    isDarkTheme = isDarkTheme,
+                    enabled = true,
+                    fontSizeOverride = baseFont,
+                    onTap = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        btn.onClick()
+                    }
+                )
+            }
+        }
+    ) { measurables, constraints ->
+        val progress = sciProgressState.value
+        val areaW = constraints.maxWidth.toFloat()
+        val areaH = constraints.maxHeight.toFloat()
+        val gapPx = (10.dp.toPx() * (1f - progress)) + (8.dp.toPx() * progress)
 
-                    // 2. Left Scientific Column (5 buttons down left side alongside main rows: index 0..4)
-                    for (rIdx in leftSciButtons.indices) {
-                        val btn = leftSciButtons[rIdx]
-                        val xPos = 0.dp
-                        val yPos = stepY * (rIdx.toFloat() + sciProgress)
-                        Box(
-                            modifier = Modifier
-                                .offset(x = xPos, y = yPos)
-                                .size(width = cellW, height = cellH)
-                                .graphicsLayer {
-                                    alpha = sciProgress
-                                    val s = 0.65f + 0.35f * sciProgress
-                                    scaleX = s
-                                    scaleY = s
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            val btnModifier = if (isRoundMode) {
-                                Modifier.size(minOf(cellW, cellH))
-                            } else {
-                                Modifier.fillMaxSize()
-                            }
-                            CalculatorKeyButton(
-                                spec = btn,
-                                shape = buttonShape,
-                                isDarkTheme = isDarkTheme,
-                                fontSizeOverride = (15f * fontScale).sp,
-                                modifier = btnModifier,
-                                onTap = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    btn.onClick()
-                                }
-                            )
-                        }
+        val cols = 4f + progress
+        val rows = 5f + progress
+
+        val cellW = (areaW - gapPx * (cols - 1f)) / cols
+        val cellH = (areaH - gapPx * (rows - 1f)) / rows
+        val stepX = cellW + gapPx
+        val stepY = cellH + gapPx
+
+        val isRound = shapeMode == ButtonShapeMode.ROUND
+        val btnW = if (isRound) min(cellW, cellH).roundToInt().coerceAtLeast(1) else cellW.roundToInt().coerceAtLeast(1)
+        val btnH = if (isRound) btnW else cellH.roundToInt().coerceAtLeast(1)
+        val offsetInCellX = (cellW - btnW) * 0.5f
+        val offsetInCellY = (cellH - btnH) * 0.5f
+
+        val childConstraints = Constraints.fixed(btnW, btnH)
+        val placeables = measurables.map { it.measure(childConstraints) }
+
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            val sciScale = 0.72f + 0.28f * progress
+
+            // 1. Place Top Scientific Row (indices 0..4)
+            if (progress > 0.005f) {
+                for (idx in 0 until 5) {
+                    val x = (if (idx == 0) 0f else stepX * ((idx - 1).toFloat() + progress)) + offsetInCellX
+                    val y = offsetInCellY
+                    placeables[idx].placeWithLayer(x.roundToInt(), y.roundToInt()) {
+                        alpha = progress
+                        scaleX = sciScale
+                        scaleY = sciScale
                     }
                 }
 
-                // 3. Main 5x4 Keypad (smoothly shrinks and shifts right/down as sciProgress goes 0f -> 1f)
-                for (rIdx in mainRows.indices) {
-                    val row = mainRows[rIdx]
-                    for (cIdx in row.indices) {
-                        val btn = row[cIdx]
-                        val xPos = stepX * (cIdx.toFloat() + sciProgress)
-                        val yPos = stepY * (rIdx.toFloat() + sciProgress)
-
-                        val baseFont = if (btn.kind == CalcButtonKind.OPERATOR || btn.kind == CalcButtonKind.EQUALS) {
-                            26f
-                        } else {
-                            22f
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .offset(x = xPos, y = yPos)
-                                .size(width = cellW, height = cellH),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            // In ROUND mode, enforce exact 1:1 square dimensions (diameter = min(cellW, cellH))
-                            // so CircleShape produces a 100% geometrically perfect circle
-                            val btnModifier = if (isRoundMode) {
-                                Modifier.size(minOf(cellW, cellH))
-                            } else {
-                                Modifier.fillMaxSize()
-                            }
-                            CalculatorKeyButton(
-                                spec = btn,
-                                shape = buttonShape,
-                                isDarkTheme = isDarkTheme,
-                                fontSizeOverride = (baseFont * fontScale).sp,
-                                modifier = btnModifier,
-                                onTap = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    btn.onClick()
-                                }
-                            )
-                        }
+                // 2. Place Left Scientific Column (indices 5..9)
+                for (rIdx in 0 until 5) {
+                    val x = offsetInCellX
+                    val y = stepY * (rIdx.toFloat() + progress) + offsetInCellY
+                    placeables[5 + rIdx].placeWithLayer(x.roundToInt(), y.roundToInt()) {
+                        alpha = progress
+                        scaleX = sciScale
+                        scaleY = sciScale
                     }
+                }
+            }
+
+            // 3. Place Main 5x4 Buttons (indices 10..29)
+            for (rIdx in 0 until 5) {
+                for (cIdx in 0 until 4) {
+                    val x = stepX * (cIdx.toFloat() + progress) + offsetInCellX
+                    val y = stepY * (rIdx.toFloat() + progress) + offsetInCellY
+                    placeables[10 + rIdx * 4 + cIdx].placeWithLayer(x.roundToInt(), y.roundToInt())
                 }
             }
         }
@@ -922,7 +910,10 @@ fun ColorPaletteSwatch(
     )
     Box(
         modifier = Modifier
-            .scale(scale)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .size(36.dp)
             .clip(CircleShape)
             .background(
@@ -998,22 +989,24 @@ fun SettingsOptionChip(
 fun CalculatorKeyButton(
     spec: CalcButtonSpec,
     shape: Shape,
+    shapeMode: ButtonShapeMode,
     isDarkTheme: Boolean,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
-    fontSizeOverride: TextUnit? = null,
+    fontSizeOverride: TextUnit = 20.sp,
     onTap: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
-    val glowProgress by animateFloatAsState(
+    val glowState = animateFloatAsState(
         targetValue = if (isPressed) 1f else 0f,
-        animationSpec = tween(durationMillis = if (isPressed) 70 else 260),
+        animationSpec = tween(durationMillis = if (isPressed) 65 else 240),
         label = "buttonGlow"
     )
-    val pressScale by animateFloatAsState(
+    val scaleState = animateFloatAsState(
         targetValue = if (isPressed) 0.95f else 1f,
-        animationSpec = tween(durationMillis = 90),
+        animationSpec = tween(durationMillis = 80),
         label = "buttonScale"
     )
 
@@ -1044,14 +1037,8 @@ fun CalculatorKeyButton(
         )
     }
 
-    // Cold white glow for dark theme, deep dark blue glow for light theme
-    val glowColor = if (isDarkTheme) {
-        Color(0xFFE8F4FF)
-    } else {
-        Color(0xFF0D2B6B)
-    }
+    val glowColor = if (isDarkTheme) Color(0xFFE8F4FF) else Color(0xFF0D2B6B)
 
-    // Translucent + semi-3D gradient colors
     val topAlpha = if (isDarkTheme) 0.68f else 0.78f
     val bottomAlpha = if (isDarkTheme) 0.46f else 0.56f
     val topHighlightTint = if (isDarkTheme) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.55f)
@@ -1060,106 +1047,103 @@ fun CalculatorKeyButton(
     val topSurfaceColor = lerp(baseBgColor.copy(alpha = topAlpha), topHighlightTint, 0.22f)
     val bottomSurfaceColor = lerp(baseBgColor.copy(alpha = bottomAlpha), bottomShadeTint, 0.25f)
 
-    val topRimBase = if (isDarkTheme) {
-        Color.White.copy(alpha = 0.34f)
-    } else {
-        Color.White.copy(alpha = 0.85f)
-    }
-    val bottomRimBase = if (isDarkTheme) {
-        Color.Black.copy(alpha = 0.60f)
-    } else {
-        Color(0xFF1E293B).copy(alpha = 0.24f)
-    }
-
-    val activeTopRim = lerp(topRimBase, glowColor.copy(alpha = 0.9f), glowProgress * 0.75f)
-    val activeBottomRim = lerp(bottomRimBase, glowColor.copy(alpha = 0.75f), glowProgress * 0.65f)
-
-    val defaultFontSize = when (spec.kind) {
-        CalcButtonKind.OPERATOR, CalcButtonKind.EQUALS -> 26.sp
-        CalcButtonKind.SCIENTIFIC -> 14.sp
-        else -> 22.sp
-    }
+    val topRimBase = if (isDarkTheme) Color.White.copy(alpha = 0.34f) else Color.White.copy(alpha = 0.85f)
+    val bottomRimBase = if (isDarkTheme) Color.Black.copy(alpha = 0.60f) else Color(0xFF1E293B).copy(alpha = 0.24f)
 
     Box(
         modifier = modifier
-            .scale(pressScale)
-            .drawBehind {
+            .graphicsLayer {
+                val s = scaleState.value
+                scaleX = s
+                scaleY = s
+            }
+            .drawWithCache {
                 val shadowRadius = size.maxDimension * 0.58f
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = if (isDarkTheme) 0.36f else 0.14f),
-                            Color.Transparent
-                        ),
-                        center = Offset(center.x, center.y + 4.dp.toPx()),
-                        radius = shadowRadius
+                val shadowCenter = Offset(center.x, center.y + 3.dp.toPx())
+                val shadowBrush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.Black.copy(alpha = if (isDarkTheme) 0.34f else 0.13f),
+                        Color.Transparent
                     ),
-                    radius = shadowRadius,
-                    center = Offset(center.x, center.y + 4.dp.toPx())
+                    center = shadowCenter,
+                    radius = shadowRadius
                 )
+                val glowRadius = size.maxDimension * 0.72f
+                val outerGlowBrush = Brush.radialGradient(
+                    colors = listOf(
+                        glowColor.copy(alpha = if (isDarkTheme) 0.56f else 0.46f),
+                        glowColor.copy(alpha = if (isDarkTheme) 0.22f else 0.18f),
+                        Color.Transparent
+                    ),
+                    center = center,
+                    radius = glowRadius
+                )
+                val cornerPx = when (shapeMode) {
+                    ButtonShapeMode.ROUND -> size.minDimension * 0.5f
+                    ButtonShapeMode.ROUNDED -> 18.dp.toPx()
+                    ButtonShapeMode.SQUARE -> 5.dp.toPx()
+                }
+                val cornerRadius = CornerRadius(cornerPx, cornerPx)
+                val surfaceBrush = Brush.verticalGradient(
+                    colors = listOf(topSurfaceColor, bottomSurfaceColor)
+                )
+                val borderBrush = Brush.linearGradient(
+                    colors = listOf(topRimBase, bottomRimBase),
+                    start = Offset.Zero,
+                    end = Offset(size.width, size.height)
+                )
+                val glowBorderBrush = Brush.linearGradient(
+                    colors = listOf(glowColor.copy(alpha = 0.9f), glowColor.copy(alpha = 0.7f)),
+                    start = Offset.Zero,
+                    end = Offset(size.width, size.height)
+                )
+                val borderStroke = Stroke(width = 1.3.dp.toPx())
 
-                if (glowProgress > 0.01f) {
-                    val glowRadius = size.maxDimension * 0.72f
+                onDrawBehind {
+                    val gp = glowState.value
                     drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                glowColor.copy(alpha = (if (isDarkTheme) 0.55f else 0.45f) * glowProgress),
-                                glowColor.copy(alpha = (if (isDarkTheme) 0.22f else 0.18f) * glowProgress),
-                                Color.Transparent
-                            ),
-                            center = center,
-                            radius = glowRadius
-                        ),
-                        radius = glowRadius,
-                        center = center
+                        brush = shadowBrush,
+                        radius = shadowRadius,
+                        center = shadowCenter
                     )
+                    if (gp > 0.01f) {
+                        drawCircle(
+                            brush = outerGlowBrush,
+                            radius = glowRadius,
+                            center = center,
+                            alpha = gp
+                        )
+                    }
+                    drawRoundRect(
+                        brush = surfaceBrush,
+                        cornerRadius = cornerRadius
+                    )
+                    if (gp > 0.01f) {
+                        drawRoundRect(
+                            color = glowColor.copy(alpha = (if (isDarkTheme) 0.26f else 0.20f) * gp),
+                            cornerRadius = cornerRadius
+                        )
+                    }
+                    drawRoundRect(
+                        brush = borderBrush,
+                        cornerRadius = cornerRadius,
+                        style = borderStroke
+                    )
+                    if (gp > 0.01f) {
+                        drawRoundRect(
+                            brush = glowBorderBrush,
+                            cornerRadius = cornerRadius,
+                            style = borderStroke,
+                            alpha = gp * 0.75f
+                        )
+                    }
                 }
             }
             .clip(shape)
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(topSurfaceColor, bottomSurfaceColor)
-                )
-            )
-            .drawBehind {
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = if (isDarkTheme) 0.14f else 0.38f),
-                            Color.Transparent
-                        ),
-                        startY = 0f,
-                        endY = size.height * 0.42f
-                    )
-                )
-                if (glowProgress > 0.01f) {
-                    val innerRadius = size.maxDimension * 0.56f
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                glowColor.copy(alpha = (if (isDarkTheme) 0.42f else 0.32f) * glowProgress),
-                                Color.Transparent
-                            ),
-                            center = center,
-                            radius = innerRadius
-                        ),
-                        radius = innerRadius,
-                        center = center
-                    )
-                }
-            }
-            .border(
-                width = 1.3.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(activeTopRim, activeBottomRim),
-                    start = Offset.Zero,
-                    end = Offset(200f, 200f)
-                ),
-                shape = shape
-            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
+                enabled = enabled,
                 role = Role.Button,
                 onClick = onTap
             ),
@@ -1168,7 +1152,7 @@ fun CalculatorKeyButton(
         Text(
             text = spec.label,
             color = contentColor,
-            fontSize = fontSizeOverride ?: defaultFontSize,
+            fontSize = fontSizeOverride,
             fontWeight = if (spec.kind == CalcButtonKind.NUMBER) FontWeight.Normal else FontWeight.SemiBold,
             maxLines = 1
         )
