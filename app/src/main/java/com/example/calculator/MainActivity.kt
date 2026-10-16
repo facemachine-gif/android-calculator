@@ -366,7 +366,9 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
             .systemBarsPadding()
             .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
-        val isLandscape = maxWidth > maxHeight
+        val screenW = maxWidth
+        val screenH = maxHeight
+        val isLandscape = screenW > screenH
 
         // Notify ViewModel immediately when screen orientation changes between portrait and landscape
         SideEffect {
@@ -381,7 +383,7 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
 
         if (!isLandscape) {
             // Portrait Layout: Top Bar -> Dropdowns -> Display -> Fixed-Height Keypad
-            val fixedKeypadHeight: Dp = minOf(maxHeight * 0.58f, maxWidth * 1.20f)
+            val fixedKeypadHeight: Dp = minOf(screenH * 0.58f, screenW * 1.20f)
 
             Column(
                 modifier = Modifier.fillMaxSize(),
@@ -472,7 +474,7 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                         vm = vm,
                         isRu = isRu,
                         visible = showHistory,
-                        maxCardHeight = maxHeight * 0.72f,
+                        maxCardHeight = screenH * 0.72f,
                         onSelectHistory = { item ->
                             vm.onHistoryItemSelected(item)
                             showHistory = false
@@ -483,7 +485,7 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                         vm = vm,
                         isRu = isRu,
                         visible = showSettings,
-                        maxCardHeight = maxHeight * 0.75f
+                        maxCardHeight = screenH * 0.75f
                     )
 
                     CalculatorDisplaySection(
