@@ -33,12 +33,40 @@ class CalculatorViewModelTest {
         vm.onDecimalPoint()
         assertEquals("0.", vm.expression)
         vm.onDigit("5")
-        vm.onDecimalPoint() // duplicate decimal in same number should be ignored
+        vm.onDecimalPoint()
         assertEquals("0.5", vm.expression)
 
         vm.onOperator("+")
-        vm.onOperator("×") // should replace '+' with '×'
+        vm.onOperator("×")
         assertEquals("0.5×", vm.expression)
+    }
+
+    @Test
+    fun testScientificModeAndSettingsState() {
+        val vm = CalculatorViewModel()
+        assertFalse(vm.isScientificMode)
+        vm.toggleScientificMode()
+        assertTrue(vm.isScientificMode)
+
+        vm.updateThemeMode(ThemeMode.DARK)
+        assertEquals(ThemeMode.DARK, vm.themeMode)
+
+        vm.updateThemePalette(ThemePalette.EMERALD)
+        assertEquals(ThemePalette.EMERALD, vm.themePalette)
+
+        vm.updateButtonShapeMode(ButtonShapeMode.ROUND)
+        assertEquals(ButtonShapeMode.ROUND, vm.buttonShapeMode)
+
+        vm.onFunction("sin")
+        vm.onDigit("3")
+        vm.onDigit("0")
+        assertEquals("sin(30", vm.expression)
+        assertEquals("0.5", vm.preview)
+
+        vm.onBackspace()
+        vm.onBackspace()
+        vm.onBackspace() // removes "sin(" in one step
+        assertEquals("", vm.expression)
     }
 
     @Test

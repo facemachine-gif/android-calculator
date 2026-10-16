@@ -15,6 +15,14 @@ enum class ThemeMode {
     SYSTEM, LIGHT, DARK
 }
 
+enum class ThemePalette {
+    OCEAN, EMERALD, AMETHYST, AMBER, ROSE
+}
+
+enum class ButtonShapeMode {
+    ROUND, ROUNDED, SQUARE
+}
+
 class CalculatorViewModel : ViewModel() {
 
     var expression by mutableStateOf("")
@@ -29,12 +37,33 @@ class CalculatorViewModel : ViewModel() {
     var themeMode by mutableStateOf(ThemeMode.SYSTEM)
         private set
 
+    var themePalette by mutableStateOf(ThemePalette.OCEAN)
+        private set
+
+    var buttonShapeMode by mutableStateOf(ButtonShapeMode.ROUNDED)
+        private set
+
+    var isScientificMode by mutableStateOf(false)
+        private set
+
+    var isDegreeMode by mutableStateOf(true)
+        private set
+
+    var isInverseTrig by mutableStateOf(false)
+        private set
+
     var testResults by mutableStateOf(CalculatorEngine.runSelfTests())
         private set
 
     val history = mutableStateListOf<HistoryItem>()
 
-    private val operators = setOf('+', '−', '×', '÷')
+    private val operators = setOf('+', '−', '×', '÷', '^')
+    private val functionPrefixes = listOf(
+        "asin(", "acos(", "atan(",
+        "sqrt(", "cbrt(",
+        "sin(", "cos(", "tan(", "log(", "abs(",
+        "ln(", "√(", "∛("
+    )
 
     fun runDiagnostics() {
         testResults = CalculatorEngine.runSelfTests()
@@ -42,8 +71,9 @@ class CalculatorViewModel : ViewModel() {
 
     fun loadTestExpression(testCase: CalculatorEngine.SelfTestCase) {
         expression = testCase.expression
+        isDegreeMode = testCase.isDegrees
         isError = false
-        when (val res = CalculatorEngine.evaluate(expression)) {
+        when (val res = CalculatorEngine.evaluate(expression, isDegrees = isDegreeMode)) {
             is CalculatorEngine.EvalResult.Success -> {
                 preview = res.formatted
                 isError = false
@@ -61,6 +91,31 @@ class CalculatorViewModel : ViewModel() {
             ThemeMode.DARK -> ThemeMode.LIGHT
             ThemeMode.LIGHT -> ThemeMode.SYSTEM
         }
+    }
+
+    fun updateThemeMode(mode: ThemeMode) {
+        themeMode = mode
+    }
+
+    fun updateThemePalette(palette: ThemePalette) {
+        themePalette = palette
+    }
+
+    fun updateButtonShapeMode(shapeMode: ButtonShapeMode) {
+        buttonShapeMode = shapeMode
+    }
+
+    fun toggleScientificMode() {
+        isScientificMode = !isScientificMode
+    }
+
+    fun toggleDegreeMode() {
+        isDegreeMode = !isDegreeMode
+        updatePreview()
+    }
+
+    fun toggleInverseTrig() {
+        isInverseTrig = !isInverseTrig
     }
 
     fun onDigit(digit: String) {
@@ -108,10 +163,69 @@ class CalculatorViewModel : ViewModel() {
         updatePreview()
     }
 
+    fun onFunction(funcName: String) {
+        if (isError) {
+            expression = ""
+            isError = false
+        }
+        val token = when (funcName) {
+            "sqrt" -> "√("
+            "cbrt" -> "∛("
+            else -> "$funcName("
+        }
+        expression += token
+        updatePreview()
+    }
+
+    fun onConstant(constantSymbol: String) {
+        if (isError) {
+            expression = ""
+            isError = false
+        }
+        expression += constantSymbol
+        updatePreview()
+    }
+
+    fun onPower() {
+        onOperator("^")
+    }
+
+    fun onSquare() {
+        if (isError || expression.isEmpty()) return
+        val last = expression.last()
+        if (last.isDigit() || last == ')' || last == 'π' || last == 'e') {
+            expression += "^2"
+            updatePreview()
+        }
+    }
+
+    fun onFactorial() {
+        if (isError || expression.isEmpty()) return
+        val last = expression.last()
+        if (last.isDigit() || last == ')' || last == 'π' || last == 'e') {
+            expression += "!"
+            updatePreview()
+        }
+    }
+
+    fun onReciprocal() {
+        if (isError) {
+            expression = "1÷("
+            isError = false
+            return
+        }
+        if (expression.isEmpty()) {
+            expression = "1÷("
+        } else {
+            expression = "1÷($expression)"
+        }
+        updatePreview()
+    }
+
     fun onPercent() {
         if (isError || expression.isEmpty()) return
         val last = expression.last()
-        if (last.isDigit() || last == ')') {
+        if (last.isDigit() || last == ')' || last == 'π' || last == 'e') {
             expression += "%"
             updatePreview()
         }
@@ -129,7 +243,7 @@ class CalculatorViewModel : ViewModel() {
 
         if (last == null || last in operators || last == '(') {
             expression += "("
-        } else if (openCount > closeCount && (last.isDigit() || last == ')' || last == '%')) {
+        } else if (openCount > closeCount && (last.isDigit() || last == ')' || last == '%' || last == '!' || last == 'π' || last == 'e')) {
             expression += ")"
         } else {
             expression += "×("
@@ -163,7 +277,12 @@ class CalculatorViewModel : ViewModel() {
             return
         }
         if (expression.isNotEmpty()) {
-            expression = expression.dropLast(1)
+            val matchedPrefix = functionPrefixes.firstOrNull { expression.endsWith(it) }
+            expression = if (matchedPrefix != null) {
+                expression.dropLast(matchedPrefix.length)
+            } else {
+                expression.dropLast(1)
+            }
             updatePreview()
         }
     }
@@ -176,7 +295,7 @@ class CalculatorViewModel : ViewModel() {
 
     fun onEquals() {
         if (expression.isEmpty() || isError) return
-        when (val res = CalculatorEngine.evaluate(expression)) {
+        when (val res = CalculatorEngine.evaluate(expression, isDegrees = isDegreeMode)) {
             is CalculatorEngine.EvalResult.Success -> {
                 val formatted = res.formatted
                 if (formatted != expression) {
@@ -209,13 +328,16 @@ class CalculatorViewModel : ViewModel() {
             isError = false
             return
         }
-        val hasOperatorOrParen = expression.any { it in operators || it == '(' || it == ')' || it == '%' }
-        if (!hasOperatorOrParen) {
+        val hasComplexOrOperator = expression.any {
+            it in operators || it == '(' || it == ')' || it == '%' || it == '!' ||
+                    it == '√' || it == '∛' || it == 'π' || it == 'e' || it.isLetter()
+        }
+        if (!hasComplexOrOperator) {
             preview = ""
             isError = false
             return
         }
-        when (val res = CalculatorEngine.evaluate(expression)) {
+        when (val res = CalculatorEngine.evaluate(expression, isDegrees = isDegreeMode)) {
             is CalculatorEngine.EvalResult.Success -> {
                 preview = if (res.formatted != expression) res.formatted else ""
                 isError = false

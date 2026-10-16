@@ -6,8 +6,8 @@ import org.junit.Test
 
 class CalculatorEngineTest {
 
-    private fun evalFormatted(expr: String): String {
-        val res = CalculatorEngine.evaluate(expr)
+    private fun evalFormatted(expr: String, isDegrees: Boolean = true): String {
+        val res = CalculatorEngine.evaluate(expr, isDegrees = isDegrees)
         assertTrue("Expected success for $expr but got $res", res is CalculatorEngine.EvalResult.Success)
         return (res as CalculatorEngine.EvalResult.Success).formatted
     }
@@ -58,9 +58,23 @@ class CalculatorEngineTest {
     }
 
     @Test
+    fun testScientificFunctionsAndConstants() {
+        assertEquals("41", evalFormatted("2^5+√(81)"))
+        assertEquals("2", evalFormatted("sin(30)+cos(60)+tan(45)", isDegrees = true))
+        assertEquals("30", evalFormatted("asin(0.5)", isDegrees = true))
+        assertEquals("45", evalFormatted("atan(1)", isDegrees = true))
+        assertEquals("120", evalFormatted("5!"))
+        assertEquals("1", evalFormatted("0!"))
+        assertEquals("2", evalFormatted("log(100)"))
+        assertEquals("1", evalFormatted("ln(e)"))
+        assertEquals("1", evalFormatted("cos(π)", isDegrees = false).let { if (it == "-1") "1" else it })
+        assertEquals("-1", evalFormatted("cos(π)", isDegrees = false))
+    }
+
+    @Test
     fun testBuiltInSelfTestSuite() {
         val results = CalculatorEngine.runSelfTests()
-        assertEquals(12, results.size)
+        assertEquals(15, results.size)
         for (r in results) {
             assertTrue("Self-test failed: ${r.testCase.title} (actual=${r.actual})", r.passed)
         }

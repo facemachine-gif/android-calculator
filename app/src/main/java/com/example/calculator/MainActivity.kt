@@ -1,29 +1,44 @@
 package com.example.calculator
 
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -34,12 +49,21 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val vm: CalculatorViewModel = viewModel()
-            CalculatorAppTheme(themeMode = vm.themeMode) {
+            val systemDark = isSystemInDarkTheme()
+            val isDark = when (vm.themeMode) {
+                ThemeMode.SYSTEM -> systemDark
+                ThemeMode.DARK -> true
+                ThemeMode.LIGHT -> false
+            }
+            CalculatorAppTheme(
+                darkTheme = isDark,
+                palette = vm.themePalette
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    CalculatorScreen(vm = vm)
+                    CalculatorScreen(vm = vm, isDarkTheme = isDark)
                 }
             }
         }
@@ -48,57 +72,196 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun CalculatorAppTheme(
-    themeMode: ThemeMode,
+    darkTheme: Boolean,
+    palette: ThemePalette,
     content: @Composable () -> Unit
 ) {
-    val systemDark = isSystemInDarkTheme()
-    val darkTheme = when (themeMode) {
-        ThemeMode.SYSTEM -> systemDark
-        ThemeMode.DARK -> true
-        ThemeMode.LIGHT -> false
-    }
-
-    val context = LocalContext.current
-    val colorScheme = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    val colorScheme = if (darkTheme) {
+        when (palette) {
+            ThemePalette.OCEAN -> darkColorScheme(
+                primary = Color(0xFF38BDF8),
+                onPrimary = Color(0xFF00263A),
+                primaryContainer = Color(0xFF0284C7),
+                onPrimaryContainer = Color(0xFFE0F2FE),
+                secondaryContainer = Color(0xFF1E293B),
+                onSecondaryContainer = Color(0xFFE2E8F0),
+                tertiaryContainer = Color(0xFF283548),
+                onTertiaryContainer = Color(0xFF7DD3FC),
+                errorContainer = Color(0xFF7F1D1D),
+                onErrorContainer = Color(0xFFFECACA),
+                background = Color(0xFF0B1120),
+                onBackground = Color(0xFFF8FAFC),
+                surface = Color(0xFF111827),
+                onSurface = Color(0xFFF8FAFC),
+                surfaceVariant = Color(0xFF1E293B),
+                onSurfaceVariant = Color(0xFF94A3B8)
+            )
+            ThemePalette.EMERALD -> darkColorScheme(
+                primary = Color(0xFF34D399),
+                onPrimary = Color(0xFF022C22),
+                primaryContainer = Color(0xFF059669),
+                onPrimaryContainer = Color(0xFFD1FAE5),
+                secondaryContainer = Color(0xFF142924),
+                onSecondaryContainer = Color(0xFFECFDF5),
+                tertiaryContainer = Color(0xFF1F3A33),
+                onTertiaryContainer = Color(0xFF6EE7B7),
+                errorContainer = Color(0xFF7F1D1D),
+                onErrorContainer = Color(0xFFFECACA),
+                background = Color(0xFF071512),
+                onBackground = Color(0xFFF0FDF4),
+                surface = Color(0xFF0D1F1B),
+                onSurface = Color(0xFFF0FDF4),
+                surfaceVariant = Color(0xFF162E28),
+                onSurfaceVariant = Color(0xFF99B8AF)
+            )
+            ThemePalette.AMETHYST -> darkColorScheme(
+                primary = Color(0xFFC084FC),
+                onPrimary = Color(0xFF2E1065),
+                primaryContainer = Color(0xFF7C3AED),
+                onPrimaryContainer = Color(0xFFF3E8FF),
+                secondaryContainer = Color(0xFF231B38),
+                onSecondaryContainer = Color(0xFFF5F3FF),
+                tertiaryContainer = Color(0xFF342654),
+                onTertiaryContainer = Color(0xFFD8B4FE),
+                errorContainer = Color(0xFF7F1D1D),
+                onErrorContainer = Color(0xFFFECACA),
+                background = Color(0xFF0F0A1C),
+                onBackground = Color(0xFFFAF5FF),
+                surface = Color(0xFF17112B),
+                onSurface = Color(0xFFFAF5FF),
+                surfaceVariant = Color(0xFF251C42),
+                onSurfaceVariant = Color(0xFFB5A8D1)
+            )
+            ThemePalette.AMBER -> darkColorScheme(
+                primary = Color(0xFFFBBF24),
+                onPrimary = Color(0xFF3F2305),
+                primaryContainer = Color(0xFFD97706),
+                onPrimaryContainer = Color(0xFFFEF3C7),
+                secondaryContainer = Color(0xFF292116),
+                onSecondaryContainer = Color(0xFFFFFBEB),
+                tertiaryContainer = Color(0xFF3D301D),
+                onTertiaryContainer = Color(0xFFFCD34D),
+                errorContainer = Color(0xFF7F1D1D),
+                onErrorContainer = Color(0xFFFECACA),
+                background = Color(0xFF14100A),
+                onBackground = Color(0xFFFFFBEB),
+                surface = Color(0xFF1F1910),
+                onSurface = Color(0xFFFFFBEB),
+                surfaceVariant = Color(0xFF2E2418),
+                onSurfaceVariant = Color(0xFFC4B59B)
+            )
+            ThemePalette.ROSE -> darkColorScheme(
+                primary = Color(0xFFFB7185),
+                onPrimary = Color(0xFF4C0519),
+                primaryContainer = Color(0xFFE11D48),
+                onPrimaryContainer = Color(0xFFFFE4E6),
+                secondaryContainer = Color(0xFF2D1922),
+                onSecondaryContainer = Color(0xFFFFF1F2),
+                tertiaryContainer = Color(0xFF422230),
+                onTertiaryContainer = Color(0xFFFDA4AF),
+                errorContainer = Color(0xFF7F1D1D),
+                onErrorContainer = Color(0xFFFECACA),
+                background = Color(0xFF170B10),
+                onBackground = Color(0xFFFFF1F2),
+                surface = Color(0xFF221118),
+                onSurface = Color(0xFFFFF1F2),
+                surfaceVariant = Color(0xFF331B26),
+                onSurfaceVariant = Color(0xFFC9A3B0)
+            )
         }
-        darkTheme -> darkColorScheme(
-            primary = Color(0xFF38BDF8),
-            onPrimary = Color(0xFF00263A),
-            primaryContainer = Color(0xFF0284C7),
-            onPrimaryContainer = Color(0xFFE0F2FE),
-            secondaryContainer = Color(0xFF1E293B),
-            onSecondaryContainer = Color(0xFFE2E8F0),
-            tertiaryContainer = Color(0xFF334155),
-            onTertiaryContainer = Color(0xFF7DD3FC),
-            errorContainer = Color(0xFF7F1D1D),
-            onErrorContainer = Color(0xFFFECACA),
-            background = Color(0xFF0B1120),
-            onBackground = Color(0xFFF8FAFC),
-            surface = Color(0xFF111827),
-            onSurface = Color(0xFFF8FAFC),
-            surfaceVariant = Color(0xFF1E293B),
-            onSurfaceVariant = Color(0xFF94A3B8)
-        )
-        else -> lightColorScheme(
-            primary = Color(0xFF0284C7),
-            onPrimary = Color.White,
-            primaryContainer = Color(0xFF0284C7),
-            onPrimaryContainer = Color.White,
-            secondaryContainer = Color(0xFFF1F5F9),
-            onSecondaryContainer = Color(0xFF0F172A),
-            tertiaryContainer = Color(0xFFE0F2FE),
-            onTertiaryContainer = Color(0xFF0369A1),
-            errorContainer = Color(0xFFFEE2E2),
-            onErrorContainer = Color(0xFFB91C1C),
-            background = Color(0xFFF8FAFC),
-            onBackground = Color(0xFF0F172A),
-            surface = Color.White,
-            onSurface = Color(0xFF0F172A),
-            surfaceVariant = Color(0xFFE2E8F0),
-            onSurfaceVariant = Color(0xFF475569)
-        )
+    } else {
+        when (palette) {
+            ThemePalette.OCEAN -> lightColorScheme(
+                primary = Color(0xFF0284C7),
+                onPrimary = Color.White,
+                primaryContainer = Color(0xFF0284C7),
+                onPrimaryContainer = Color.White,
+                secondaryContainer = Color(0xFFE2E8F0),
+                onSecondaryContainer = Color(0xFF0F172A),
+                tertiaryContainer = Color(0xFFBAE6FD),
+                onTertiaryContainer = Color(0xFF0369A1),
+                errorContainer = Color(0xFFFEE2E2),
+                onErrorContainer = Color(0xFFB91C1C),
+                background = Color(0xFFF1F5F9),
+                onBackground = Color(0xFF0F172A),
+                surface = Color.White,
+                onSurface = Color(0xFF0F172A),
+                surfaceVariant = Color(0xFFE2E8F0),
+                onSurfaceVariant = Color(0xFF475569)
+            )
+            ThemePalette.EMERALD -> lightColorScheme(
+                primary = Color(0xFF059669),
+                onPrimary = Color.White,
+                primaryContainer = Color(0xFF059669),
+                onPrimaryContainer = Color.White,
+                secondaryContainer = Color(0xFFD1FAE5),
+                onSecondaryContainer = Color(0xFF064E3B),
+                tertiaryContainer = Color(0xFFA7F3D0),
+                onTertiaryContainer = Color(0xFF047857),
+                errorContainer = Color(0xFFFEE2E2),
+                onErrorContainer = Color(0xFFB91C1C),
+                background = Color(0xFFECFDF5),
+                onBackground = Color(0xFF064E3B),
+                surface = Color.White,
+                onSurface = Color(0xFF064E3B),
+                surfaceVariant = Color(0xFFD1FAE5),
+                onSurfaceVariant = Color(0xFF047857)
+            )
+            ThemePalette.AMETHYST -> lightColorScheme(
+                primary = Color(0xFF7C3AED),
+                onPrimary = Color.White,
+                primaryContainer = Color(0xFF7C3AED),
+                onPrimaryContainer = Color.White,
+                secondaryContainer = Color(0xFFEDE9FE),
+                onSecondaryContainer = Color(0xFF2E1065),
+                tertiaryContainer = Color(0xFFDDD6FE),
+                onTertiaryContainer = Color(0xFF5B21B6),
+                errorContainer = Color(0xFFFEE2E2),
+                onErrorContainer = Color(0xFFB91C1C),
+                background = Color(0xFFF5F3FF),
+                onBackground = Color(0xFF2E1065),
+                surface = Color.White,
+                onSurface = Color(0xFF2E1065),
+                surfaceVariant = Color(0xFFEDE9FE),
+                onSurfaceVariant = Color(0xFF5B21B6)
+            )
+            ThemePalette.AMBER -> lightColorScheme(
+                primary = Color(0xFFD97706),
+                onPrimary = Color.White,
+                primaryContainer = Color(0xFFD97706),
+                onPrimaryContainer = Color.White,
+                secondaryContainer = Color(0xFFFEF3C7),
+                onSecondaryContainer = Color(0xFF451A03),
+                tertiaryContainer = Color(0xFFFDE68A),
+                onTertiaryContainer = Color(0xFFB45309),
+                errorContainer = Color(0xFFFEE2E2),
+                onErrorContainer = Color(0xFFB91C1C),
+                background = Color(0xFFFFFBEB),
+                onBackground = Color(0xFF451A03),
+                surface = Color.White,
+                onSurface = Color(0xFF451A03),
+                surfaceVariant = Color(0xFFFEF3C7),
+                onSurfaceVariant = Color(0xFF92400E)
+            )
+            ThemePalette.ROSE -> lightColorScheme(
+                primary = Color(0xFFE11D48),
+                onPrimary = Color.White,
+                primaryContainer = Color(0xFFE11D48),
+                onPrimaryContainer = Color.White,
+                secondaryContainer = Color(0xFFFFE4E6),
+                onSecondaryContainer = Color(0xFF4C0519),
+                tertiaryContainer = Color(0xFFFECDD3),
+                onTertiaryContainer = Color(0xFFBE123C),
+                errorContainer = Color(0xFFFEE2E2),
+                onErrorContainer = Color(0xFFB91C1C),
+                background = Color(0xFFFFF1F2),
+                onBackground = Color(0xFF4C0519),
+                surface = Color.White,
+                onSurface = Color(0xFF4C0519),
+                surfaceVariant = Color(0xFFFFE4E6),
+                onSurfaceVariant = Color(0xFF9F1239)
+            )
+        }
     }
 
     MaterialTheme(
@@ -108,7 +271,7 @@ fun CalculatorAppTheme(
 }
 
 enum class CalcButtonKind {
-    NUMBER, OPERATOR, ACTION, CLEAR, EQUALS
+    NUMBER, OPERATOR, ACTION, SCIENTIFIC, CLEAR, EQUALS
 }
 
 data class CalcButtonSpec(
@@ -118,25 +281,35 @@ data class CalcButtonSpec(
 )
 
 @Composable
-fun CalculatorScreen(vm: CalculatorViewModel) {
+fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
     var showHistory by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+
+    val buttonShape: Shape = when (vm.buttonShapeMode) {
+        ButtonShapeMode.ROUND -> CircleShape
+        ButtonShapeMode.ROUNDED -> RoundedCornerShape(20.dp)
+        ButtonShapeMode.SQUARE -> RoundedCornerShape(5.dp)
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .systemBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Top Bar: History toggle and Theme selector
+        // Top Bar: History button (unchanged) and Settings gear button (on place of Theme button)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             FilledTonalButton(
-                onClick = { showHistory = !showHistory },
+                onClick = {
+                    showHistory = !showHistory
+                    if (showHistory) showSettings = false
+                },
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 Text(
@@ -147,19 +320,21 @@ fun CalculatorScreen(vm: CalculatorViewModel) {
             }
 
             FilledTonalButton(
-                onClick = { vm.cycleThemeMode() },
+                onClick = {
+                    showSettings = !showSettings
+                    if (showSettings) showHistory = false
+                },
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
             ) {
-                val modeLabel = when (vm.themeMode) {
-                    ThemeMode.SYSTEM -> "Тема: Авто"
-                    ThemeMode.DARK -> "Тема: Тёмная"
-                    ThemeMode.LIGHT -> "Тема: Светлая"
-                }
-                Text(text = modeLabel, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    text = if (showSettings) "⚙ Скрыть" else "⚙ Настройки",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
 
-        // Expandable History Panel
+        // Expandable History Panel (drops down when History is clicked)
         AnimatedVisibility(visible = showHistory) {
             Card(
                 modifier = Modifier
@@ -168,7 +343,7 @@ fun CalculatorScreen(vm: CalculatorViewModel) {
                     .padding(top = 8.dp),
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
                 )
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
@@ -242,20 +417,128 @@ fun CalculatorScreen(vm: CalculatorViewModel) {
             }
         }
 
-        // Display Card
+        // Expandable Settings Panel (drops down just like History when Gear icon is clicked)
+        AnimatedVisibility(visible = showSettings) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 260.dp)
+                    .padding(top = 8.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Настройки темы и кнопок",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // 1. Theme Mode (Auto / Dark / Light)
+                    Text(
+                        text = "Режим темы",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val modes = listOf(
+                            ThemeMode.SYSTEM to "Авто",
+                            ThemeMode.DARK to "Тёмная",
+                            ThemeMode.LIGHT to "Светлая"
+                        )
+                        for ((mode, label) in modes) {
+                            SettingsOptionChip(
+                                label = label,
+                                selected = vm.themeMode == mode,
+                                modifier = Modifier.weight(1f),
+                                onClick = { vm.updateThemeMode(mode) }
+                            )
+                        }
+                    }
+
+                    // 2. Color Palette (Improved Theme customization)
+                    Text(
+                        text = "Цветовое оформление темы",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val palettes = listOf(
+                            ThemePalette.OCEAN to "Океан",
+                            ThemePalette.EMERALD to "Изумруд",
+                            ThemePalette.AMETHYST to "Аметист",
+                            ThemePalette.AMBER to "Янтарь",
+                            ThemePalette.ROSE to "Рубин"
+                        )
+                        for ((palette, title) in palettes) {
+                            SettingsOptionChip(
+                                label = title,
+                                selected = vm.themePalette == palette,
+                                modifier = Modifier.weight(1f),
+                                onClick = { vm.updateThemePalette(palette) }
+                            )
+                        }
+                    }
+
+                    // 3. Button Shape Selection (Round / Rounded / Square)
+                    Text(
+                        text = "Форма кнопок",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val shapes = listOf(
+                            ButtonShapeMode.ROUND to "Круглые",
+                            ButtonShapeMode.ROUNDED to "Скруглённые",
+                            ButtonShapeMode.SQUARE to "Квадратные"
+                        )
+                        for ((shapeOption, label) in shapes) {
+                            SettingsOptionChip(
+                                label = label,
+                                selected = vm.buttonShapeMode == shapeOption,
+                                modifier = Modifier.weight(1f),
+                                onClick = { vm.updateButtonShapeMode(shapeOption) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Display Area
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(vertical = 12.dp),
+                .padding(vertical = 6.dp),
             verticalArrangement = Arrangement.Bottom,
             horizontalAlignment = Alignment.End
         ) {
             val exprText = if (vm.expression.isEmpty()) "0" else vm.expression
             val exprFontSize = when {
-                exprText.length > 18 -> 28.sp
-                exprText.length > 12 -> 36.sp
-                else -> 48.sp
+                exprText.length > 22 -> 24.sp
+                exprText.length > 15 -> 32.sp
+                vm.isScientificMode -> 38.sp
+                else -> 46.sp
             }
             Text(
                 text = exprText,
@@ -269,11 +552,11 @@ fun CalculatorScreen(vm: CalculatorViewModel) {
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Text(
                 text = if (vm.preview.isNotEmpty()) "= ${vm.preview}" else "",
-                fontSize = 24.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Medium,
                 color = if (vm.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.End,
@@ -281,14 +564,14 @@ fun CalculatorScreen(vm: CalculatorViewModel) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(34.dp)
+                    .height(30.dp)
             )
 
-            // Backspace Row
+            // Action & Mode Row: Sign toggle, Advanced Calculator expander button, and Backspace
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 4.dp),
+                    .padding(top = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -296,9 +579,24 @@ fun CalculatorScreen(vm: CalculatorViewModel) {
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         vm.onToggleSign()
-                    }
+                    },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-                    Text(text = "+/− Знак", fontSize = 15.sp)
+                    Text(text = "+/− Знак", fontSize = 14.sp)
+                }
+
+                FilledTonalButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        vm.toggleScientificMode()
+                    },
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = if (vm.isScientificMode) "f(x) Обычный ▴" else "f(x) Инженерный ▾",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
 
                 IconButton(
@@ -320,7 +618,67 @@ fun CalculatorScreen(vm: CalculatorViewModel) {
             }
         }
 
-        // Keypad Grid (5 rows x 4 columns)
+        // Expandable Advanced / Scientific Keypad (3 rows x 5 columns)
+        AnimatedVisibility(visible = vm.isScientificMode) {
+            val sciRows = listOf(
+                listOf(
+                    CalcButtonSpec(if (vm.isDegreeMode) "DEG" else "RAD", CalcButtonKind.SCIENTIFIC) { vm.toggleDegreeMode() },
+                    CalcButtonSpec("sin", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sin") },
+                    CalcButtonSpec("cos", CalcButtonKind.SCIENTIFIC) { vm.onFunction("cos") },
+                    CalcButtonSpec("tan", CalcButtonKind.SCIENTIFIC) { vm.onFunction("tan") },
+                    CalcButtonSpec("π", CalcButtonKind.SCIENTIFIC) { vm.onConstant("π") }
+                ),
+                listOf(
+                    CalcButtonSpec("sin⁻¹", CalcButtonKind.SCIENTIFIC) { vm.onFunction("asin") },
+                    CalcButtonSpec("cos⁻¹", CalcButtonKind.SCIENTIFIC) { vm.onFunction("acos") },
+                    CalcButtonSpec("tan⁻¹", CalcButtonKind.SCIENTIFIC) { vm.onFunction("atan") },
+                    CalcButtonSpec("ln", CalcButtonKind.SCIENTIFIC) { vm.onFunction("ln") },
+                    CalcButtonSpec("log", CalcButtonKind.SCIENTIFIC) { vm.onFunction("log") }
+                ),
+                listOf(
+                    CalcButtonSpec("√x", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sqrt") },
+                    CalcButtonSpec("xʸ", CalcButtonKind.SCIENTIFIC) { vm.onPower() },
+                    CalcButtonSpec("x²", CalcButtonKind.SCIENTIFIC) { vm.onSquare() },
+                    CalcButtonSpec("n!", CalcButtonKind.SCIENTIFIC) { vm.onFactorial() },
+                    CalcButtonSpec("e", CalcButtonKind.SCIENTIFIC) { vm.onConstant("e") }
+                )
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                for (row in sciRows) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        for (btn in row) {
+                            CalculatorKeyButton(
+                                spec = btn,
+                                shape = buttonShape,
+                                isDarkTheme = isDarkTheme,
+                                fontSizeOverride = 14.sp,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(42.dp),
+                                onTap = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    btn.onClick()
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Standard Keypad Grid (5 rows x 4 columns)
+        val mainButtonHeight = if (vm.isScientificMode) 54.dp else 66.dp
+        val mainSpacing = if (vm.isScientificMode) 8.dp else 10.dp
+
         val rows = listOf(
             listOf(
                 CalcButtonSpec("AC", CalcButtonKind.CLEAR) { vm.onClear() },
@@ -356,19 +714,21 @@ fun CalculatorScreen(vm: CalculatorViewModel) {
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(mainSpacing)
         ) {
             for (row in rows) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(mainSpacing)
                 ) {
                     for (btn in row) {
                         CalculatorKeyButton(
                             spec = btn,
+                            shape = buttonShape,
+                            isDarkTheme = isDarkTheme,
                             modifier = Modifier
                                 .weight(1f)
-                                .height(68.dp),
+                                .height(mainButtonHeight),
                             onTap = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 btn.onClick()
@@ -382,12 +742,72 @@ fun CalculatorScreen(vm: CalculatorViewModel) {
 }
 
 @Composable
+fun SettingsOptionChip(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val bg = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.65f)
+    }
+    val fg = if (selected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
+    }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = fg,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
 fun CalculatorKeyButton(
     spec: CalcButtonSpec,
+    shape: Shape,
+    isDarkTheme: Boolean,
     modifier: Modifier = Modifier,
+    fontSizeOverride: TextUnit? = null,
     onTap: () -> Unit
 ) {
-    val (bgColor, contentColor) = when (spec.kind) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val glowProgress by animateFloatAsState(
+        targetValue = if (isPressed) 1f else 0f,
+        animationSpec = tween(durationMillis = if (isPressed) 70 else 260),
+        label = "buttonGlow"
+    )
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = tween(durationMillis = 90),
+        label = "buttonScale"
+    )
+
+    val (baseBgColor, contentColor) = when (spec.kind) {
         CalcButtonKind.NUMBER -> Pair(
             MaterialTheme.colorScheme.secondaryContainer,
             MaterialTheme.colorScheme.onSecondaryContainer
@@ -395,6 +815,10 @@ fun CalculatorKeyButton(
         CalcButtonKind.ACTION -> Pair(
             MaterialTheme.colorScheme.tertiaryContainer,
             MaterialTheme.colorScheme.onTertiaryContainer
+        )
+        CalcButtonKind.SCIENTIFIC -> Pair(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.primary
         )
         CalcButtonKind.OPERATOR -> Pair(
             MaterialTheme.colorScheme.tertiaryContainer,
@@ -410,20 +834,138 @@ fun CalculatorKeyButton(
         )
     }
 
-    Button(
-        onClick = onTap,
-        modifier = modifier,
-        shape = RoundedCornerShape(22.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = bgColor,
-            contentColor = contentColor
-        ),
-        contentPadding = PaddingValues(0.dp)
+    // Cold white glow for dark theme, deep dark blue glow for light theme
+    val glowColor = if (isDarkTheme) {
+        Color(0xFFE8F4FF) // Cold icy white
+    } else {
+        Color(0xFF0D2B6B) // Deep dark blue
+    }
+
+    // Translucent + semi-3D gradient colors
+    val topAlpha = if (isDarkTheme) 0.68f else 0.78f
+    val bottomAlpha = if (isDarkTheme) 0.46f else 0.56f
+    val topHighlightTint = if (isDarkTheme) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.55f)
+    val bottomShadeTint = if (isDarkTheme) Color.Black.copy(alpha = 0.35f) else Color(0xFF0F172A).copy(alpha = 0.14f)
+
+    val topSurfaceColor = lerp(baseBgColor.copy(alpha = topAlpha), topHighlightTint, 0.22f)
+    val bottomSurfaceColor = lerp(baseBgColor.copy(alpha = bottomAlpha), bottomShadeTint, 0.25f)
+
+    // Semi-3D beveled border brush (top-left bright rim, bottom-right deep shadow rim)
+    val topRimBase = if (isDarkTheme) {
+        Color.White.copy(alpha = 0.34f)
+    } else {
+        Color.White.copy(alpha = 0.85f)
+    }
+    val bottomRimBase = if (isDarkTheme) {
+        Color.Black.copy(alpha = 0.60f)
+    } else {
+        Color(0xFF1E293B).copy(alpha = 0.24f)
+    }
+
+    val activeTopRim = lerp(topRimBase, glowColor.copy(alpha = 0.9f), glowProgress * 0.75f)
+    val activeBottomRim = lerp(bottomRimBase, glowColor.copy(alpha = 0.75f), glowProgress * 0.65f)
+
+    val defaultFontSize = when (spec.kind) {
+        CalcButtonKind.OPERATOR, CalcButtonKind.EQUALS -> 26.sp
+        CalcButtonKind.SCIENTIFIC -> 14.sp
+        else -> 22.sp
+    }
+
+    Box(
+        modifier = modifier
+            .scale(pressScale)
+            .drawBehind {
+                // Soft 3D drop shadow under the button
+                val shadowRadius = size.maxDimension * 0.58f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = if (isDarkTheme) 0.36f else 0.14f),
+                            Color.Transparent
+                        ),
+                        center = Offset(center.x, center.y + 4.dp.toPx()),
+                        radius = shadowRadius
+                    ),
+                    radius = shadowRadius,
+                    center = Offset(center.x, center.y + 4.dp.toPx())
+                )
+
+                // Small-radius radial glow around button when pressed
+                if (glowProgress > 0.01f) {
+                    val glowRadius = size.maxDimension * 0.72f
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                glowColor.copy(alpha = (if (isDarkTheme) 0.55f else 0.45f) * glowProgress),
+                                glowColor.copy(alpha = (if (isDarkTheme) 0.22f else 0.18f) * glowProgress),
+                                Color.Transparent
+                            ),
+                            center = center,
+                            radius = glowRadius
+                        ),
+                        radius = glowRadius,
+                        center = center
+                    )
+                }
+            }
+            .clip(shape)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(topSurfaceColor, bottomSurfaceColor)
+                )
+            )
+            .drawBehind {
+                // Top inner specular highlight for 3D glass depth
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = if (isDarkTheme) 0.14f else 0.38f),
+                            Color.Transparent
+                        ),
+                        startY = 0f,
+                        endY = size.height * 0.42f
+                    )
+                )
+                // Inner radial illumination in a small radius on press
+                if (glowProgress > 0.01f) {
+                    val innerRadius = size.maxDimension * 0.56f
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                glowColor.copy(alpha = (if (isDarkTheme) 0.42f else 0.32f) * glowProgress),
+                                Color.Transparent
+                            ),
+                            center = center,
+                            radius = innerRadius
+                        ),
+                        radius = innerRadius,
+                        center = center
+                    )
+                }
+            }
+            .border(
+                width = 1.3.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(activeTopRim, activeBottomRim),
+                    start = Offset.Zero,
+                    end = Offset(200f, 200f)
+                ),
+                shape = shape
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onTap
+            ),
+        contentAlignment = Alignment.Center
     ) {
         Text(
             text = spec.label,
-            fontSize = if (spec.kind == CalcButtonKind.OPERATOR || spec.kind == CalcButtonKind.EQUALS) 28.sp else 24.sp,
-            fontWeight = if (spec.kind == CalcButtonKind.NUMBER) FontWeight.Normal else FontWeight.SemiBold
+            color = contentColor,
+            fontSize = fontSizeOverride ?: defaultFontSize,
+            fontWeight = if (spec.kind == CalcButtonKind.NUMBER) FontWeight.Normal else FontWeight.SemiBold,
+            maxLines = 1
         )
     }
 }
