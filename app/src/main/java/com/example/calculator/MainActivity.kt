@@ -1058,8 +1058,9 @@ fun CalculatorKeyButton(
                 scaleY = s
             }
             .drawWithCache {
+                val btnCenter = Offset(size.width * 0.5f, size.height * 0.5f)
                 val shadowRadius = size.maxDimension * 0.58f
-                val shadowCenter = Offset(center.x, center.y + 3.dp.toPx())
+                val shadowCenter = Offset(btnCenter.x, btnCenter.y + 3.dp.toPx())
                 val shadowBrush = Brush.radialGradient(
                     colors = listOf(
                         Color.Black.copy(alpha = if (isDarkTheme) 0.34f else 0.13f),
@@ -1075,7 +1076,7 @@ fun CalculatorKeyButton(
                         glowColor.copy(alpha = if (isDarkTheme) 0.22f else 0.18f),
                         Color.Transparent
                     ),
-                    center = center,
+                    center = btnCenter,
                     radius = glowRadius
                 )
                 val cornerPx = when (shapeMode) {
