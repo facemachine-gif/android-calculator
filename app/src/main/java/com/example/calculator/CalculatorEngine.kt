@@ -7,7 +7,6 @@ import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.asin
 import kotlin.math.atan
-import kotlin.math.cbrt
 import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.log10
@@ -88,7 +87,6 @@ object CalculatorEngine {
             return EvalResult.Success(BigDecimal.ZERO, "0")
         }
 
-        // Balance unclosed opening parentheses automatically for convenience
         val openCount = cleaned.count { it == '(' }
         val closeCount = cleaned.count { it == ')' }
         val balanced = if (openCount > closeCount) {
@@ -205,7 +203,6 @@ object CalculatorEngine {
             i++
         }
 
-        // Insert implicit multiplication: e.g., 2(3), 2π, 2sin(30), (2)(3), 5!2, 50%2
         val result = mutableListOf<Token>()
         for (idx in rawTokens.indices) {
             val curr = rawTokens[idx]
@@ -489,7 +486,7 @@ object CalculatorEngine {
                 if (arg < BigDecimal.ZERO) throw ArithmeticException("Корень из отрицательного числа")
                 sqrt(x)
             }
-            "cbrt" -> cbrt(x)
+            "cbrt" -> Math.cbrt(x)
             "abs" -> return arg.abs()
             else -> throw IllegalArgumentException("Неизвестная функция: $name")
         }

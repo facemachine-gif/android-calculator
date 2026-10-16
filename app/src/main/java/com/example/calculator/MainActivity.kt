@@ -889,7 +889,7 @@ fun AnimatedKeypadGrid(
                 for (cIdx in 0 until 4) {
                     val x = stepX * (cIdx.toFloat() + progress) + offsetInCellX
                     val y = stepY * (rIdx.toFloat() + progress) + offsetInCellY
-                    placeables[10 + rIdx * 4 + cIdx].placeWithLayer(x.roundToInt(), y.roundToInt())
+                    placeables[10 + rIdx * 4 + cIdx].place(x.roundToInt(), y.roundToInt())
                 }
             }
         }
