@@ -60,6 +60,8 @@ private const val KEY_BUTTON_SHAPE = "button_shape"
 private const val KEY_LANGUAGE = "app_language"
 private const val KEY_DEGREE_MODE = "degree_mode"
 private const val KEY_AUTO_SCI_LANDSCAPE = "auto_sci_landscape"
+private const val KEY_TOP_BAR_ORDER = "top_bar_order"
+private const val KEY_GRID_LAYOUT = "grid_layout_v1"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -92,6 +94,8 @@ class MainActivity : ComponentActivity() {
 
                 val savedDeg = prefs.getBoolean(KEY_DEGREE_MODE, true)
                 val savedAutoSci = prefs.getBoolean(KEY_AUTO_SCI_LANDSCAPE, true)
+                val savedTopBar = vm.parseTopBarOrder(prefs.getString(KEY_TOP_BAR_ORDER, null))
+                val savedGrid = vm.parseGridLayout(prefs.getString(KEY_GRID_LAYOUT, null))
 
                 vm.loadSavedSettings(
                     savedThemeMode = savedMode,
@@ -99,19 +103,23 @@ class MainActivity : ComponentActivity() {
                     savedShape = savedShape,
                     savedLang = savedLang,
                     savedDegreeMode = savedDeg,
-                    savedAutoSciOnLandscape = savedAutoSci
+                    savedAutoSciOnLandscape = savedAutoSci,
+                    savedTopBarOrder = savedTopBar,
+                    savedGridLayout = savedGrid
                 )
                 true
             }
 
-            // Persist settings whenever any user preference changes
+            // Persist settings whenever any user preference or layout customization changes
             LaunchedEffect(
                 vm.themeMode,
                 vm.themePalette,
                 vm.buttonShapeMode,
                 vm.language,
                 vm.isDegreeMode,
-                vm.autoScientificOnLandscape
+                vm.autoScientificOnLandscape,
+                vm.topBarOrder,
+                vm.gridLayout
             ) {
                 prefs.edit()
                     .putString(KEY_THEME_MODE, vm.themeMode.name)
@@ -120,6 +128,8 @@ class MainActivity : ComponentActivity() {
                     .putString(KEY_LANGUAGE, vm.language.name)
                     .putBoolean(KEY_DEGREE_MODE, vm.isDegreeMode)
                     .putBoolean(KEY_AUTO_SCI_LANDSCAPE, vm.autoScientificOnLandscape)
+                    .putString(KEY_TOP_BAR_ORDER, vm.serializeTopBarOrder())
+                    .putString(KEY_GRID_LAYOUT, vm.serializeGridLayout())
                     .apply()
             }
 
@@ -349,10 +359,36 @@ enum class CalcButtonKind {
 }
 
 data class CalcButtonSpec(
+    val id: String,
     val label: String,
     val kind: CalcButtonKind,
     val onClick: () -> Unit
 )
+
+fun resolveButtonSpec(id: String, vm: CalculatorViewModel): CalcButtonSpec {
+    return when (id) {
+        "DEG" -> CalcButtonSpec(id, if (vm.isDegreeMode) "DEG" else "RAD", CalcButtonKind.SCIENTIFIC) { vm.toggleDegreeMode() }
+        "sin" -> CalcButtonSpec(id, "sin", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sin") }
+        "cos" -> CalcButtonSpec(id, "cos", CalcButtonKind.SCIENTIFIC) { vm.onFunction("cos") }
+        "tan" -> CalcButtonSpec(id, "tan", CalcButtonKind.SCIENTIFIC) { vm.onFunction("tan") }
+        "ln" -> CalcButtonSpec(id, "ln", CalcButtonKind.SCIENTIFIC) { vm.onFunction("ln") }
+        "sqrt" -> CalcButtonSpec(id, "√x", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sqrt") }
+        "pow" -> CalcButtonSpec(id, "xʸ", CalcButtonKind.SCIENTIFIC) { vm.onPower() }
+        "log" -> CalcButtonSpec(id, "log", CalcButtonKind.SCIENTIFIC) { vm.onFunction("log") }
+        "fact" -> CalcButtonSpec(id, "n!", CalcButtonKind.SCIENTIFIC) { vm.onFactorial() }
+        "pi" -> CalcButtonSpec(id, "π", CalcButtonKind.SCIENTIFIC) { vm.onConstant("π") }
+        "AC" -> CalcButtonSpec(id, "AC", CalcButtonKind.CLEAR) { vm.onClear() }
+        "paren" -> CalcButtonSpec(id, "( )", CalcButtonKind.ACTION) { vm.onParentheses() }
+        "percent" -> CalcButtonSpec(id, "%", CalcButtonKind.ACTION) { vm.onPercent() }
+        "div" -> CalcButtonSpec(id, "÷", CalcButtonKind.OPERATOR) { vm.onOperator("÷") }
+        "mul" -> CalcButtonSpec(id, "×", CalcButtonKind.OPERATOR) { vm.onOperator("×") }
+        "sub" -> CalcButtonSpec(id, "−", CalcButtonKind.OPERATOR) { vm.onOperator("−") }
+        "add" -> CalcButtonSpec(id, "+", CalcButtonKind.OPERATOR) { vm.onOperator("+") }
+        "dot" -> CalcButtonSpec(id, ".", CalcButtonKind.NUMBER) { vm.onDecimalPoint() }
+        "eq" -> CalcButtonSpec(id, "=", CalcButtonKind.EQUALS) { vm.onEquals() }
+        else -> CalcButtonSpec(id, id, CalcButtonKind.NUMBER) { vm.onDigit(id) }
+    }
+}
 
 @Composable
 fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
@@ -370,19 +406,24 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
         val screenH = maxHeight
         val isLandscape = screenW > screenH
 
-        // Notify ViewModel immediately when screen orientation changes between portrait and landscape
         SideEffect {
             vm.onOrientationChanged(isLandscape)
         }
 
-        val sciProgressState = animateFloatAsState(
-            targetValue = if (vm.isScientificMode) 1f else 0f,
+        val (targetStartRow, targetStartCol) = vm.computeActiveGridBounds(vm.isScientificMode)
+
+        val startRowState = animateFloatAsState(
+            targetValue = targetStartRow.toFloat(),
             animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
-            label = "scientificLayoutProgress"
+            label = "animatedStartRow"
+        )
+        val startColState = animateFloatAsState(
+            targetValue = targetStartCol.toFloat(),
+            animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+            label = "animatedStartCol"
         )
 
         if (!isLandscape) {
-            // Portrait Layout: Top Bar -> Dropdowns -> Display -> Fixed-Height Keypad
             val fixedKeypadHeight: Dp = minOf(screenH * 0.58f, screenW * 1.20f)
 
             Column(
@@ -404,10 +445,15 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                     }
                 )
 
+                CustomizationBanner(
+                    vm = vm,
+                    isRu = isRu
+                )
+
                 HistoryDropdownPanel(
                     vm = vm,
                     isRu = isRu,
-                    visible = showHistory,
+                    visible = showHistory && !vm.isCustomizationMode,
                     maxCardHeight = 190.dp,
                     onSelectHistory = { item ->
                         vm.onHistoryItemSelected(item)
@@ -418,8 +464,13 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                 SettingsDropdownPanel(
                     vm = vm,
                     isRu = isRu,
-                    visible = showSettings,
-                    maxCardHeight = 270.dp
+                    visible = showSettings && !vm.isCustomizationMode,
+                    maxCardHeight = 290.dp,
+                    onStartCustomization = {
+                        showSettings = false
+                        showHistory = false
+                        vm.toggleCustomizationMode()
+                    }
                 )
 
                 CalculatorDisplaySection(
@@ -434,7 +485,8 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
 
                 AnimatedKeypadGrid(
                     vm = vm,
-                    sciProgressState = sciProgressState,
+                    startRowState = startRowState,
+                    startColState = startColState,
                     isDarkTheme = isDarkTheme,
                     isLandscape = false,
                     modifier = Modifier
@@ -443,7 +495,6 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                 )
             }
         } else {
-            // Landscape Layout: Two-Pane Row (Left = TopBar + Dropdowns + Display, Right = Full-Height Keypad)
             Row(
                 modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -470,10 +521,15 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                         }
                     )
 
+                    CustomizationBanner(
+                        vm = vm,
+                        isRu = isRu
+                    )
+
                     HistoryDropdownPanel(
                         vm = vm,
                         isRu = isRu,
-                        visible = showHistory,
+                        visible = showHistory && !vm.isCustomizationMode,
                         maxCardHeight = screenH * 0.72f,
                         onSelectHistory = { item ->
                             vm.onHistoryItemSelected(item)
@@ -484,8 +540,13 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                     SettingsDropdownPanel(
                         vm = vm,
                         isRu = isRu,
-                        visible = showSettings,
-                        maxCardHeight = screenH * 0.75f
+                        visible = showSettings && !vm.isCustomizationMode,
+                        maxCardHeight = screenH * 0.78f,
+                        onStartCustomization = {
+                            showSettings = false
+                            showHistory = false
+                            vm.toggleCustomizationMode()
+                        }
                     )
 
                     CalculatorDisplaySection(
@@ -501,7 +562,8 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
 
                 AnimatedKeypadGrid(
                     vm = vm,
-                    sciProgressState = sciProgressState,
+                    startRowState = startRowState,
+                    startColState = startColState,
                     isDarkTheme = isDarkTheme,
                     isLandscape = true,
                     modifier = Modifier
@@ -523,80 +585,192 @@ fun CalculatorTopBar(
     onToggleSettings: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val customMode = vm.isCustomizationMode
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        FilledTonalButton(
-            onClick = onToggleHistory,
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-        ) {
-            val histText = if (isRu) {
-                if (showHistory) "Скрыть" else "История (${vm.history.size})"
+        for ((index, item) in vm.topBarOrder.withIndex()) {
+            val isSelectedForSwap = customMode && vm.selectedTopBarIndex == index
+            val borderModifier = if (customMode) {
+                Modifier.border(
+                    width = if (isSelectedForSwap) 2.dp else 1.dp,
+                    color = if (isSelectedForSwap)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(50)
+                )
             } else {
-                if (showHistory) "Hide" else "History (${vm.history.size})"
+                Modifier
             }
-            Text(
-                text = histText,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
 
-        FilledTonalButton(
-            onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                vm.toggleScientificMode()
-            },
-            modifier = Modifier.weight(1f),
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = if (vm.isScientificMode)
-                    MaterialTheme.colorScheme.primaryContainer
-                else
-                    MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = if (vm.isScientificMode)
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                else
-                    MaterialTheme.colorScheme.onSecondaryContainer
-            ),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-        ) {
-            val sciText = if (isRu) {
-                if (vm.isScientificMode) "f(x) Обычн." else "f(x) Инж."
-            } else {
-                if (vm.isScientificMode) "f(x) Basic" else "f(x) Sci"
-            }
-            Text(
-                text = sciText,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+            when (item) {
+                TopBarItem.HISTORY -> {
+                    FilledTonalButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (customMode) {
+                                vm.onTopBarChipTappedInCustomMode(index)
+                            } else {
+                                onToggleHistory()
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(borderModifier),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        val prefix = if (customMode) "⇄ " else ""
+                        val histText = if (isRu) {
+                            if (showHistory && !customMode) "Скрыть" else "${prefix}История (${vm.history.size})"
+                        } else {
+                            if (showHistory && !customMode) "Hide" else "${prefix}History (${vm.history.size})"
+                        }
+                        Text(
+                            text = histText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
 
-        FilledTonalButton(
-            onClick = onToggleSettings,
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-        ) {
-            val settingsText = if (isRu) {
-                if (showSettings) "⚙ Скрыть" else "⚙ Настройки"
-            } else {
-                if (showSettings) "⚙ Hide" else "⚙ Settings"
+                TopBarItem.MODE -> {
+                    FilledTonalButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (customMode) {
+                                vm.onTopBarChipTappedInCustomMode(index)
+                            } else {
+                                vm.toggleScientificMode()
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(borderModifier),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = if (vm.isScientificMode)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = if (vm.isScientificMode)
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            else
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        val prefix = if (customMode) "⇄ " else ""
+                        val sciText = if (isRu) {
+                            if (vm.isScientificMode) "${prefix}f(x) Обычн." else "${prefix}f(x) Инж."
+                        } else {
+                            if (vm.isScientificMode) "${prefix}f(x) Basic" else "${prefix}f(x) Sci"
+                        }
+                        Text(
+                            text = sciText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                TopBarItem.SETTINGS -> {
+                    FilledTonalButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (customMode) {
+                                vm.onTopBarChipTappedInCustomMode(index)
+                            } else {
+                                onToggleSettings()
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(borderModifier),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        val prefix = if (customMode) "⇄ " else ""
+                        val settingsText = if (isRu) {
+                            if (showSettings && !customMode) "⚙ Скрыть" else "${prefix}⚙ Настройки"
+                        } else {
+                            if (showSettings && !customMode) "⚙ Hide" else "${prefix}⚙ Settings"
+                        }
+                        Text(
+                            text = settingsText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
-            Text(
-                text = settingsText,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+        }
+    }
+}
+
+@Composable
+fun CustomizationBanner(
+    vm: CalculatorViewModel,
+    isRu: Boolean
+) {
+    AnimatedVisibility(visible = vm.isCustomizationMode) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.90f)
             )
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = if (isRu)
+                        "Режим кастомизации: нажмите 2 элемента для обмена местами, × — удалить кнопку"
+                    else
+                        "Customization: tap 2 items to swap places, × to delete a button",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SettingsOptionChip(
+                        label = if (isRu) {
+                            if (vm.isScientificMode) "Вид: Инж." else "Вид: Обычн."
+                        } else {
+                            if (vm.isScientificMode) "View: Sci" else "View: Basic"
+                        },
+                        selected = vm.isScientificMode,
+                        modifier = Modifier.weight(1f),
+                        onClick = { vm.toggleScientificMode() }
+                    )
+                    SettingsOptionChip(
+                        label = if (isRu) "↺ Сбросить" else "↺ Reset",
+                        selected = false,
+                        modifier = Modifier.weight(1f),
+                        onClick = { vm.resetCustomizations() }
+                    )
+                    SettingsOptionChip(
+                        label = if (isRu) "✓ Готово" else "✓ Done",
+                        selected = true,
+                        modifier = Modifier.weight(1f),
+                        onClick = { vm.exitCustomizationMode() }
+                    )
+                }
+            }
         }
     }
 }
@@ -694,7 +868,8 @@ fun SettingsDropdownPanel(
     vm: CalculatorViewModel,
     isRu: Boolean,
     visible: Boolean,
-    maxCardHeight: Dp
+    maxCardHeight: Dp,
+    onStartCustomization: () -> Unit
 ) {
     AnimatedVisibility(visible = visible) {
         Card(
@@ -872,6 +1047,31 @@ fun SettingsDropdownPanel(
                         )
                     }
                 }
+
+                // 6. Customization Mode Entry & Reset
+                Text(
+                    text = if (isRu) "Кастомизация" else "Customization",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    SettingsOptionChip(
+                        label = if (isRu) "✎ Настроить кнопки и плашки" else "✎ Customize layout",
+                        selected = vm.isCustomizationMode,
+                        modifier = Modifier.weight(1.6f),
+                        onClick = onStartCustomization
+                    )
+                    SettingsOptionChip(
+                        label = if (isRu) "↺ Сброс" else "↺ Reset",
+                        selected = false,
+                        modifier = Modifier.weight(1f),
+                        onClick = { vm.resetCustomizations() }
+                    )
+                }
             }
         }
     }
@@ -968,13 +1168,18 @@ fun CalculatorDisplaySection(
 @Composable
 fun AnimatedKeypadGrid(
     vm: CalculatorViewModel,
-    sciProgressState: State<Float>,
+    startRowState: State<Float>,
+    startColState: State<Float>,
     isDarkTheme: Boolean,
     isLandscape: Boolean,
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
     val shapeMode = vm.buttonShapeMode
+    val customMode = vm.isCustomizationMode
+    val selectedCell = vm.selectedGridIndex
+    val gridIds = vm.gridLayout
+
     val buttonShape: Shape = remember(shapeMode) {
         when (shapeMode) {
             ButtonShapeMode.ROUND -> CircleShape
@@ -983,121 +1188,85 @@ fun AnimatedKeypadGrid(
         }
     }
 
-    val topSciButtons = remember(vm.isDegreeMode) {
-        listOf(
-            CalcButtonSpec(if (vm.isDegreeMode) "DEG" else "RAD", CalcButtonKind.SCIENTIFIC) { vm.toggleDegreeMode() },
-            CalcButtonSpec("sin", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sin") },
-            CalcButtonSpec("cos", CalcButtonKind.SCIENTIFIC) { vm.onFunction("cos") },
-            CalcButtonSpec("tan", CalcButtonKind.SCIENTIFIC) { vm.onFunction("tan") },
-            CalcButtonSpec("ln", CalcButtonKind.SCIENTIFIC) { vm.onFunction("ln") }
-        )
-    }
-
-    val leftSciButtons = remember {
-        listOf(
-            CalcButtonSpec("√x", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sqrt") },
-            CalcButtonSpec("xʸ", CalcButtonKind.SCIENTIFIC) { vm.onPower() },
-            CalcButtonSpec("log", CalcButtonKind.SCIENTIFIC) { vm.onFunction("log") },
-            CalcButtonSpec("n!", CalcButtonKind.SCIENTIFIC) { vm.onFactorial() },
-            CalcButtonSpec("π", CalcButtonKind.SCIENTIFIC) { vm.onConstant("π") }
-        )
-    }
-
-    val mainButtons = remember {
-        listOf(
-            CalcButtonSpec("AC", CalcButtonKind.CLEAR) { vm.onClear() },
-            CalcButtonSpec("( )", CalcButtonKind.ACTION) { vm.onParentheses() },
-            CalcButtonSpec("%", CalcButtonKind.ACTION) { vm.onPercent() },
-            CalcButtonSpec("÷", CalcButtonKind.OPERATOR) { vm.onOperator("÷") },
-            CalcButtonSpec("7", CalcButtonKind.NUMBER) { vm.onDigit("7") },
-            CalcButtonSpec("8", CalcButtonKind.NUMBER) { vm.onDigit("8") },
-            CalcButtonSpec("9", CalcButtonKind.NUMBER) { vm.onDigit("9") },
-            CalcButtonSpec("×", CalcButtonKind.OPERATOR) { vm.onOperator("×") },
-            CalcButtonSpec("4", CalcButtonKind.NUMBER) { vm.onDigit("4") },
-            CalcButtonSpec("5", CalcButtonKind.NUMBER) { vm.onDigit("5") },
-            CalcButtonSpec("6", CalcButtonKind.NUMBER) { vm.onDigit("6") },
-            CalcButtonSpec("−", CalcButtonKind.OPERATOR) { vm.onOperator("−") },
-            CalcButtonSpec("1", CalcButtonKind.NUMBER) { vm.onDigit("1") },
-            CalcButtonSpec("2", CalcButtonKind.NUMBER) { vm.onDigit("2") },
-            CalcButtonSpec("3", CalcButtonKind.NUMBER) { vm.onDigit("3") },
-            CalcButtonSpec("+", CalcButtonKind.OPERATOR) { vm.onOperator("+") },
-            CalcButtonSpec("00", CalcButtonKind.NUMBER) { vm.onDigit("00") },
-            CalcButtonSpec("0", CalcButtonKind.NUMBER) { vm.onDigit("0") },
-            CalcButtonSpec(".", CalcButtonKind.NUMBER) { vm.onDecimalPoint() },
-            CalcButtonSpec("=", CalcButtonKind.EQUALS) { vm.onEquals() }
-        )
-    }
-
     val sciFont = if (isLandscape) 13.sp else 14.sp
     val mainOpFont = if (isLandscape) 20.sp else 24.sp
     val mainNumFont = if (isLandscape) 17.sp else 20.sp
 
+    val (activeStartRow, activeStartCol) = vm.computeActiveGridBounds(vm.isScientificMode)
+
     Layout(
         modifier = modifier,
         content = {
-            for (btn in topSciButtons) {
-                CalculatorKeyButton(
-                    spec = btn,
-                    shape = buttonShape,
-                    shapeMode = shapeMode,
-                    isDarkTheme = isDarkTheme,
-                    enabled = vm.isScientificMode,
-                    fontSizeOverride = sciFont,
-                    onTap = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        btn.onClick()
+            for (cellIdx in 0 until CalculatorViewModel.GRID_SIZE) {
+                val r = cellIdx / CalculatorViewModel.GRID_COLS
+                val c = cellIdx % CalculatorViewModel.GRID_COLS
+                val isCellVisibleInMode = r >= activeStartRow && c >= activeStartCol
+                val btnId = gridIds[cellIdx]
+                val isSelected = customMode && selectedCell == cellIdx
+
+                if (btnId != null) {
+                    val spec = resolveButtonSpec(btnId, vm)
+                    val baseFont = when (spec.kind) {
+                        CalcButtonKind.OPERATOR, CalcButtonKind.EQUALS -> mainOpFont
+                        CalcButtonKind.SCIENTIFIC -> sciFont
+                        else -> mainNumFont
                     }
-                )
-            }
-            for (btn in leftSciButtons) {
-                CalculatorKeyButton(
-                    spec = btn,
-                    shape = buttonShape,
-                    shapeMode = shapeMode,
-                    isDarkTheme = isDarkTheme,
-                    enabled = vm.isScientificMode,
-                    fontSizeOverride = sciFont,
-                    onTap = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        btn.onClick()
-                    }
-                )
-            }
-            for (btn in mainButtons) {
-                val baseFont = if (btn.kind == CalcButtonKind.OPERATOR || btn.kind == CalcButtonKind.EQUALS) {
-                    mainOpFont
+                    CalculatorKeyButton(
+                        spec = spec,
+                        shape = buttonShape,
+                        shapeMode = shapeMode,
+                        isDarkTheme = isDarkTheme,
+                        enabled = isCellVisibleInMode,
+                        isCustomizationMode = customMode,
+                        isSelectedForSwap = isSelected,
+                        fontSizeOverride = baseFont,
+                        onTap = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (customMode) {
+                                vm.onGridCellTappedInCustomMode(cellIdx)
+                            } else {
+                                spec.onClick()
+                            }
+                        },
+                        onDelete = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            vm.deleteGridButtonAt(cellIdx)
+                        }
+                    )
                 } else {
-                    mainNumFont
+                    // Empty slot (shown only in Customization mode so user can move buttons into it)
+                    EmptyGridSlot(
+                        shape = buttonShape,
+                        visible = customMode && isCellVisibleInMode,
+                        isSelected = isSelected,
+                        onClick = {
+                            if (customMode && isCellVisibleInMode) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                vm.onGridCellTappedInCustomMode(cellIdx)
+                            }
+                        }
+                    )
                 }
-                CalculatorKeyButton(
-                    spec = btn,
-                    shape = buttonShape,
-                    shapeMode = shapeMode,
-                    isDarkTheme = isDarkTheme,
-                    enabled = true,
-                    fontSizeOverride = baseFont,
-                    onTap = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        btn.onClick()
-                    }
-                )
             }
         }
     ) { measurables, constraints ->
-        val progress = sciProgressState.value
+        val startR = startRowState.value
+        val startC = startColState.value
         val areaW = constraints.maxWidth.toFloat()
         val areaH = constraints.maxHeight.toFloat()
+
         val gapPx = if (isLandscape) {
             6.dp.toPx()
         } else {
-            (10.dp.toPx() * (1f - progress)) + (8.dp.toPx() * progress)
+            val sciFactor = (1f - startR.coerceIn(0f, 1f))
+            (10.dp.toPx() * (1f - sciFactor)) + (8.dp.toPx() * sciFactor)
         }
 
-        val cols = 4f + progress
-        val rows = 5f + progress
+        val visibleCols = (CalculatorViewModel.GRID_COLS.toFloat() - startC).coerceAtLeast(1f)
+        val visibleRows = (CalculatorViewModel.GRID_ROWS.toFloat() - startR).coerceAtLeast(1f)
 
-        val cellW = (areaW - gapPx * (cols - 1f)) / cols
-        val cellH = (areaH - gapPx * (rows - 1f)) / rows
+        val cellW = (areaW - gapPx * (visibleCols - 1f)) / visibleCols
+        val cellH = (areaH - gapPx * (visibleRows - 1f)) / visibleRows
         val stepX = cellW + gapPx
         val stepY = cellH + gapPx
 
@@ -1111,38 +1280,67 @@ fun AnimatedKeypadGrid(
         val placeables = measurables.map { it.measure(childConstraints) }
 
         layout(constraints.maxWidth, constraints.maxHeight) {
-            val sciScale = 0.72f + 0.28f * progress
+            for (cellIdx in 0 until CalculatorViewModel.GRID_SIZE) {
+                val r = cellIdx / CalculatorViewModel.GRID_COLS
+                val c = cellIdx % CalculatorViewModel.GRID_COLS
 
-            if (progress > 0.005f) {
-                for (idx in 0 until 5) {
-                    val x = (if (idx == 0) 0f else stepX * ((idx - 1).toFloat() + progress)) + offsetInCellX
-                    val y = offsetInCellY
-                    placeables[idx].placeWithLayer(x.roundToInt(), y.roundToInt()) {
-                        alpha = progress
-                        scaleX = sciScale
-                        scaleY = sciScale
+                val rowVis = (r.toFloat() - startR + 1f).coerceIn(0f, 1f)
+                val colVis = (c.toFloat() - startC + 1f).coerceIn(0f, 1f)
+                val visibility = min(rowVis, colVis)
+
+                if (visibility > 0.005f) {
+                    val x = stepX * (c.toFloat() - startC) + offsetInCellX
+                    val y = stepY * (r.toFloat() - startR) + offsetInCellY
+                    if (visibility < 0.999f) {
+                        val s = 0.72f + 0.28f * visibility
+                        placeables[cellIdx].placeWithLayer(x.roundToInt(), y.roundToInt()) {
+                            alpha = visibility
+                            scaleX = s
+                            scaleY = s
+                        }
+                    } else {
+                        placeables[cellIdx].place(x.roundToInt(), y.roundToInt())
                     }
-                }
-
-                for (rIdx in 0 until 5) {
-                    val x = offsetInCellX
-                    val y = stepY * (rIdx.toFloat() + progress) + offsetInCellY
-                    placeables[5 + rIdx].placeWithLayer(x.roundToInt(), y.roundToInt()) {
-                        alpha = progress
-                        scaleX = sciScale
-                        scaleY = sciScale
-                    }
-                }
-            }
-
-            for (rIdx in 0 until 5) {
-                for (cIdx in 0 until 4) {
-                    val x = stepX * (cIdx.toFloat() + progress) + offsetInCellX
-                    val y = stepY * (rIdx.toFloat() + progress) + offsetInCellY
-                    placeables[10 + rIdx * 4 + cIdx].place(x.roundToInt(), y.roundToInt())
                 }
             }
         }
+    }
+}
+
+@Composable
+fun EmptyGridSlot(
+    shape: Shape,
+    visible: Boolean,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    if (!visible) {
+        Box(modifier = Modifier.fillMaxSize())
+        return
+    }
+    val borderColor = if (isSelected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.30f)
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f))
+            .border(
+                width = if (isSelected) 2.dp else 1.dp,
+                color = borderColor,
+                shape = shape
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "⇄",
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        )
     }
 }
 
@@ -1242,20 +1440,23 @@ fun CalculatorKeyButton(
     shapeMode: ButtonShapeMode,
     isDarkTheme: Boolean,
     enabled: Boolean = true,
+    isCustomizationMode: Boolean = false,
+    isSelectedForSwap: Boolean = false,
     modifier: Modifier = Modifier,
     fontSizeOverride: TextUnit = 20.sp,
-    onTap: () -> Unit
+    onTap: () -> Unit,
+    onDelete: () -> Unit = {}
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val glowState = animateFloatAsState(
-        targetValue = if (isPressed) 1f else 0f,
+        targetValue = if (isPressed || isSelectedForSwap) 1f else 0f,
         animationSpec = tween(durationMillis = if (isPressed) 65 else 240),
         label = "buttonGlow"
     )
     val scaleState = animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
+        targetValue = if (isPressed) 0.95f else if (isSelectedForSwap) 0.93f else 1f,
         animationSpec = tween(durationMillis = 80),
         label = "buttonScale"
     )
@@ -1287,7 +1488,13 @@ fun CalculatorKeyButton(
         )
     }
 
-    val glowColor = if (isDarkTheme) Color(0xFFE8F4FF) else Color(0xFF0D2B6B)
+    val glowColor = if (isSelectedForSwap) {
+        MaterialTheme.colorScheme.primary
+    } else if (isDarkTheme) {
+        Color(0xFFE8F4FF)
+    } else {
+        Color(0xFF0D2B6B)
+    }
 
     val topAlpha = if (isDarkTheme) 0.68f else 0.78f
     val bottomAlpha = if (isDarkTheme) 0.46f else 0.56f
@@ -1348,7 +1555,7 @@ fun CalculatorKeyButton(
                     start = Offset.Zero,
                     end = Offset(size.width, size.height)
                 )
-                val borderStroke = Stroke(width = 1.3.dp.toPx())
+                val borderStroke = Stroke(width = if (isSelectedForSwap) 2.4.dp.toPx() else 1.3.dp.toPx())
 
                 onDrawBehind {
                     val gp = glowState.value
@@ -1385,7 +1592,7 @@ fun CalculatorKeyButton(
                             brush = glowBorderBrush,
                             cornerRadius = cornerRadius,
                             style = borderStroke,
-                            alpha = gp * 0.75f
+                            alpha = gp * 0.85f
                         )
                     }
                 }
@@ -1407,5 +1614,28 @@ fun CalculatorKeyButton(
             fontWeight = if (spec.kind == CalcButtonKind.NUMBER) FontWeight.Normal else FontWeight.SemiBold,
             maxLines = 1
         )
+
+        if (isCustomizationMode && enabled) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(3.dp)
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f))
+                    .border(1.dp, MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.6f), CircleShape)
+                    .clickable(
+                        onClick = onDelete
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "×",
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
     }
 }

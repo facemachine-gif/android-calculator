@@ -2,6 +2,7 @@ package com.example.calculator
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -90,22 +91,66 @@ class CalculatorViewModelTest {
         assertEquals(AppLanguage.EN, vm.language)
         assertTrue(vm.autoScientificOnLandscape)
 
-        // Start in portrait -> standard mode
         vm.onOrientationChanged(isLandscape = false)
         assertFalse(vm.isScientificMode)
 
-        // Rotate to landscape -> automatically enables scientific mode
         vm.onOrientationChanged(isLandscape = true)
         assertTrue(vm.isScientificMode)
 
-        // Rotate back to portrait -> automatically returns to standard mode
         vm.onOrientationChanged(isLandscape = false)
         assertFalse(vm.isScientificMode)
 
-        // Disable auto-switch on rotation -> rotating to landscape keeps standard mode
         vm.updateAutoScientificOnLandscape(false)
         vm.onOrientationChanged(isLandscape = true)
         assertFalse(vm.isScientificMode)
+    }
+
+    @Test
+    fun testCustomizationSwapDeleteAndDynamicBounds() {
+        val vm = CalculatorViewModel()
+        vm.toggleCustomizationMode()
+        assertTrue(vm.isCustomizationMode)
+
+        // 1. Swap TopBar chips (History <-> Settings)
+        vm.onTopBarChipTappedInCustomMode(0)
+        vm.onTopBarChipTappedInCustomMode(2)
+        assertEquals(listOf(TopBarItem.SETTINGS, TopBarItem.MODE, TopBarItem.HISTORY), vm.topBarOrder)
+
+        // 2. Swap two keypad buttons
+        val firstId = vm.gridLayout[6] // "AC"
+        val secondId = vm.gridLayout[7] // "paren"
+        vm.onGridCellTappedInCustomMode(6)
+        vm.onGridCellTappedInCustomMode(7)
+        assertEquals(secondId, vm.gridLayout[6])
+        assertEquals(firstId, vm.gridLayout[7])
+
+        // 3. Delete all 5 buttons in the top scientific row (indices 0..4)
+        for (c in 0 until 5) {
+            vm.deleteGridButtonAt(c)
+            assertNull(vm.gridLayout[c])
+        }
+        // In scientific mode, since top row (r=0) is now empty, startRow automatically adapts from 0 to 1
+        assertEquals(Pair(1, 0), vm.computeActiveGridBounds(forScientificMode = true))
+
+        // 4. Delete all remaining buttons in the left scientific column (c=0, rows 1..5)
+        for (r in 1 until 6) {
+            vm.deleteGridButtonAt(r * 5)
+        }
+        // Now both top row (r=0) and left col (c=0) are empty, so scientific mode bounds adapt to (1, 1)
+        assertEquals(Pair(1, 1), vm.computeActiveGridBounds(forScientificMode = true))
+
+        // 5. Serialization round-trip
+        val serializedTop = vm.serializeTopBarOrder()
+        val serializedGrid = vm.serializeGridLayout()
+        assertEquals(vm.topBarOrder, vm.parseTopBarOrder(serializedTop))
+        assertEquals(vm.gridLayout, vm.parseGridLayout(serializedGrid))
+
+        // 6. Reset customizations restores defaults
+        vm.resetCustomizations()
+        assertEquals(CalculatorViewModel.DEFAULT_TOP_BAR, vm.topBarOrder)
+        assertEquals(CalculatorViewModel.DEFAULT_GRID_IDS, vm.gridLayout)
+        assertEquals(Pair(0, 0), vm.computeActiveGridBounds(forScientificMode = true))
+        assertEquals(Pair(1, 1), vm.computeActiveGridBounds(forScientificMode = false))
     }
 
     @Test

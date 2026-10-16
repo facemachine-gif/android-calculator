@@ -27,7 +27,42 @@ enum class AppLanguage {
     RU, EN
 }
 
+enum class TopBarItem {
+    HISTORY, MODE, SETTINGS
+}
+
 class CalculatorViewModel : ViewModel() {
+
+    companion object {
+        const val GRID_ROWS = 6
+        const val GRID_COLS = 5
+        const val GRID_SIZE = GRID_ROWS * GRID_COLS
+
+        // Default 6x5 grid:
+        // Row 0 (top scientific row): DEG, sin, cos, tan, ln
+        // Col 0 (left scientific col, rows 1..5): sqrt, pow, log, fact, pi
+        // Rows 1..5, Cols 1..4 (main 5x4 keypad)
+        val DEFAULT_GRID_IDS: List<String> = listOf(
+            // Row 0
+            "DEG", "sin", "cos", "tan", "ln",
+            // Row 1
+            "sqrt", "AC", "paren", "percent", "div",
+            // Row 2
+            "pow", "7", "8", "9", "mul",
+            // Row 3
+            "log", "4", "5", "6", "sub",
+            // Row 4
+            "fact", "1", "2", "3", "add",
+            // Row 5
+            "pi", "00", "0", "dot", "eq"
+        )
+
+        val DEFAULT_TOP_BAR: List<TopBarItem> = listOf(
+            TopBarItem.HISTORY,
+            TopBarItem.MODE,
+            TopBarItem.SETTINGS
+        )
+    }
 
     var expression by mutableStateOf("")
         private set
@@ -65,6 +100,21 @@ class CalculatorViewModel : ViewModel() {
     var isInverseTrig by mutableStateOf(false)
         private set
 
+    var isCustomizationMode by mutableStateOf(false)
+        private set
+
+    var selectedTopBarIndex by mutableStateOf<Int?>(null)
+        private set
+
+    var selectedGridIndex by mutableStateOf<Int?>(null)
+        private set
+
+    var topBarOrder by mutableStateOf(DEFAULT_TOP_BAR)
+        private set
+
+    var gridLayout by mutableStateOf<List<String?>>(DEFAULT_GRID_IDS)
+        private set
+
     var testResults by mutableStateOf(CalculatorEngine.runSelfTests())
         private set
 
@@ -87,7 +137,9 @@ class CalculatorViewModel : ViewModel() {
         savedShape: ButtonShapeMode,
         savedLang: AppLanguage,
         savedDegreeMode: Boolean,
-        savedAutoSciOnLandscape: Boolean
+        savedAutoSciOnLandscape: Boolean,
+        savedTopBarOrder: List<TopBarItem>? = null,
+        savedGridLayout: List<String?>? = null
     ) {
         if (settingsLoaded) return
         settingsLoaded = true
@@ -97,6 +149,137 @@ class CalculatorViewModel : ViewModel() {
         language = savedLang
         isDegreeMode = savedDegreeMode
         autoScientificOnLandscape = savedAutoSciOnLandscape
+
+        if (savedTopBarOrder != null && savedTopBarOrder.size == 3 && savedTopBarOrder.toSet() == DEFAULT_TOP_BAR.toSet()) {
+            topBarOrder = savedTopBarOrder
+        }
+        if (savedGridLayout != null && savedGridLayout.size == GRID_SIZE) {
+            gridLayout = savedGridLayout
+        }
+    }
+
+    fun serializeTopBarOrder(): String = topBarOrder.joinToString(",") { it.name }
+
+    fun serializeGridLayout(): String = gridLayout.joinToString(",") { it ?: "NONE" }
+
+    fun parseTopBarOrder(raw: String?): List<TopBarItem>? {
+        if (raw.isNullOrBlank()) return null
+        val parts = raw.split(",")
+        if (parts.size != 3) return null
+        val parsed = parts.mapNotNull { runCatching { TopBarItem.valueOf(it.trim()) }.getOrNull() }
+        return if (parsed.size == 3 && parsed.toSet() == DEFAULT_TOP_BAR.toSet()) parsed else null
+    }
+
+    fun parseGridLayout(raw: String?): List<String?>? {
+        if (raw.isNullOrBlank()) return null
+        val parts = raw.split(",")
+        if (parts.size != GRID_SIZE) return null
+        val validIds = DEFAULT_GRID_IDS.toSet()
+        return parts.map { token ->
+            val t = token.trim()
+            if (t == "NONE" || t.isEmpty() || t !in validIds) null else t
+        }
+    }
+
+    fun toggleCustomizationMode() {
+        isCustomizationMode = !isCustomizationMode
+        selectedTopBarIndex = null
+        selectedGridIndex = null
+    }
+
+    fun exitCustomizationMode() {
+        isCustomizationMode = false
+        selectedTopBarIndex = null
+        selectedGridIndex = null
+    }
+
+    fun onTopBarChipTappedInCustomMode(index: Int) {
+        if (!isCustomizationMode || index !in 0..2) return
+        selectedGridIndex = null
+        val prev = selectedTopBarIndex
+        if (prev == null) {
+            selectedTopBarIndex = index
+        } else if (prev == index) {
+            selectedTopBarIndex = null
+        } else {
+            swapTopBarItems(prev, index)
+            selectedTopBarIndex = null
+        }
+    }
+
+    fun swapTopBarItems(indexA: Int, indexB: Int) {
+        if (indexA !in 0..2 || indexB !in 0..2 || indexA == indexB) return
+        val mutable = topBarOrder.toMutableList()
+        val tmp = mutable[indexA]
+        mutable[indexA] = mutable[indexB]
+        mutable[indexB] = tmp
+        topBarOrder = mutable
+    }
+
+    fun onGridCellTappedInCustomMode(cellIndex: Int) {
+        if (!isCustomizationMode || cellIndex !in 0 until GRID_SIZE) return
+        selectedTopBarIndex = null
+        val prev = selectedGridIndex
+        if (prev == null) {
+            selectedGridIndex = cellIndex
+        } else if (prev == cellIndex) {
+            selectedGridIndex = null
+        } else {
+            swapGridButtons(prev, cellIndex)
+            selectedGridIndex = null
+        }
+    }
+
+    fun swapGridButtons(indexA: Int, indexB: Int) {
+        if (indexA !in 0 until GRID_SIZE || indexB !in 0 until GRID_SIZE || indexA == indexB) return
+        val mutable = gridLayout.toMutableList()
+        val tmp = mutable[indexA]
+        mutable[indexA] = mutable[indexB]
+        mutable[indexB] = tmp
+        gridLayout = mutable
+    }
+
+    fun deleteGridButtonAt(cellIndex: Int) {
+        if (cellIndex !in 0 until GRID_SIZE) return
+        val mutable = gridLayout.toMutableList()
+        mutable[cellIndex] = null
+        gridLayout = mutable
+        if (selectedGridIndex == cellIndex) {
+            selectedGridIndex = null
+        }
+    }
+
+    fun resetCustomizations() {
+        topBarOrder = DEFAULT_TOP_BAR
+        gridLayout = DEFAULT_GRID_IDS
+        selectedTopBarIndex = null
+        selectedGridIndex = null
+    }
+
+    /**
+     * Computes the active starting row (0..5) and starting column (0..4) for the current mode.
+     * In Standard mode, base start is (row = 1, col = 1).
+     * In Scientific mode, base start is (row = 0, col = 0).
+     * If the top row(s) or left column(s) have no buttons in the current mode,
+     * the starting row/column advances so the remaining buttons expand to fill the interface.
+     */
+    fun computeActiveGridBounds(forScientificMode: Boolean = isScientificMode): Pair<Int, Int> {
+        var startRow = if (forScientificMode) 0 else 1
+        var startCol = if (forScientificMode) 0 else 1
+
+        var changed = true
+        while (changed) {
+            changed = false
+            while (startRow < GRID_ROWS - 1 && (startCol until GRID_COLS).all { c -> gridLayout[startRow * GRID_COLS + c] == null }) {
+                startRow++
+                changed = true
+            }
+            while (startCol < GRID_COLS - 1 && (startRow until GRID_ROWS).all { r -> gridLayout[r * GRID_COLS + startCol] == null }) {
+                startCol++
+                changed = true
+            }
+        }
+        return Pair(startRow, startCol)
     }
 
     fun onOrientationChanged(isLandscape: Boolean) {
