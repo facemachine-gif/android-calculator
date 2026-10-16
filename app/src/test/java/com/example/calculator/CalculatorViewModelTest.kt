@@ -74,6 +74,41 @@ class CalculatorViewModelTest {
     }
 
     @Test
+    fun testOrientationAutoScientificAndPersistenceRestore() {
+        val vm = CalculatorViewModel()
+        vm.loadSavedSettings(
+            savedThemeMode = ThemeMode.DARK,
+            savedPalette = ThemePalette.AMETHYST,
+            savedShape = ButtonShapeMode.ROUND,
+            savedLang = AppLanguage.EN,
+            savedDegreeMode = true,
+            savedAutoSciOnLandscape = true
+        )
+        assertEquals(ThemeMode.DARK, vm.themeMode)
+        assertEquals(ThemePalette.AMETHYST, vm.themePalette)
+        assertEquals(ButtonShapeMode.ROUND, vm.buttonShapeMode)
+        assertEquals(AppLanguage.EN, vm.language)
+        assertTrue(vm.autoScientificOnLandscape)
+
+        // Start in portrait -> standard mode
+        vm.onOrientationChanged(isLandscape = false)
+        assertFalse(vm.isScientificMode)
+
+        // Rotate to landscape -> automatically enables scientific mode
+        vm.onOrientationChanged(isLandscape = true)
+        assertTrue(vm.isScientificMode)
+
+        // Rotate back to portrait -> automatically returns to standard mode
+        vm.onOrientationChanged(isLandscape = false)
+        assertFalse(vm.isScientificMode)
+
+        // Disable auto-switch on rotation -> rotating to landscape keeps standard mode
+        vm.updateAutoScientificOnLandscape(false)
+        vm.onOrientationChanged(isLandscape = true)
+        assertFalse(vm.isScientificMode)
+    }
+
+    @Test
     fun testDiagnosticsAndLoadTestExpression() {
         val vm = CalculatorViewModel()
         vm.runDiagnostics()

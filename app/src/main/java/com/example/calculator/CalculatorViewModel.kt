@@ -53,6 +53,12 @@ class CalculatorViewModel : ViewModel() {
     var isScientificMode by mutableStateOf(false)
         private set
 
+    var portraitScientificMode by mutableStateOf(false)
+        private set
+
+    var autoScientificOnLandscape by mutableStateOf(true)
+        private set
+
     var isDegreeMode by mutableStateOf(true)
         private set
 
@@ -64,6 +70,9 @@ class CalculatorViewModel : ViewModel() {
 
     val history = mutableStateListOf<HistoryItem>()
 
+    private var lastKnownLandscape: Boolean? = null
+    private var settingsLoaded: Boolean = false
+
     private val operators = setOf('+', '−', '×', '÷', '^')
     private val functionPrefixes = listOf(
         "asin(", "acos(", "atan(",
@@ -71,6 +80,41 @@ class CalculatorViewModel : ViewModel() {
         "sin(", "cos(", "tan(", "log(", "abs(",
         "ln(", "√(", "∛("
     )
+
+    fun loadSavedSettings(
+        savedThemeMode: ThemeMode,
+        savedPalette: ThemePalette,
+        savedShape: ButtonShapeMode,
+        savedLang: AppLanguage,
+        savedDegreeMode: Boolean,
+        savedAutoSciOnLandscape: Boolean
+    ) {
+        if (settingsLoaded) return
+        settingsLoaded = true
+        themeMode = savedThemeMode
+        themePalette = savedPalette
+        buttonShapeMode = savedShape
+        language = savedLang
+        isDegreeMode = savedDegreeMode
+        autoScientificOnLandscape = savedAutoSciOnLandscape
+    }
+
+    fun onOrientationChanged(isLandscape: Boolean) {
+        if (lastKnownLandscape == isLandscape) return
+        val prevLandscape = lastKnownLandscape
+        lastKnownLandscape = isLandscape
+
+        if (autoScientificOnLandscape) {
+            if (isLandscape) {
+                if (prevLandscape == false) {
+                    portraitScientificMode = isScientificMode
+                }
+                isScientificMode = true
+            } else {
+                isScientificMode = portraitScientificMode
+            }
+        }
+    }
 
     fun runDiagnostics() {
         testResults = CalculatorEngine.runSelfTests()
@@ -116,8 +160,22 @@ class CalculatorViewModel : ViewModel() {
         language = lang
     }
 
+    fun updateAutoScientificOnLandscape(enabled: Boolean) {
+        autoScientificOnLandscape = enabled
+        if (enabled) {
+            if (lastKnownLandscape == true) {
+                isScientificMode = true
+            } else if (lastKnownLandscape == false) {
+                isScientificMode = portraitScientificMode
+            }
+        }
+    }
+
     fun toggleScientificMode() {
         isScientificMode = !isScientificMode
+        if (lastKnownLandscape != true) {
+            portraitScientificMode = isScientificMode
+        }
     }
 
     fun toggleDegreeMode() {
