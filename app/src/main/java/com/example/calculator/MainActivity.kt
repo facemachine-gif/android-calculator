@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -31,6 +32,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -38,6 +40,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -285,385 +288,613 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
     var showHistory by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+    val isRu = vm.language == AppLanguage.RU
 
     val buttonShape: Shape = when (vm.buttonShapeMode) {
         ButtonShapeMode.ROUND -> CircleShape
-        ButtonShapeMode.ROUNDED -> RoundedCornerShape(20.dp)
+        ButtonShapeMode.ROUNDED -> RoundedCornerShape(18.dp)
         ButtonShapeMode.SQUARE -> RoundedCornerShape(5.dp)
     }
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .systemBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.SpaceBetween
+            .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
-        // Top Bar: History button (unchanged) and Settings gear button (on place of Theme button)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        // Constant keypad area height — never changes when switching between standard and scientific modes
+        val fixedKeypadHeight: Dp = minOf(maxHeight * 0.58f, maxWidth * 1.20f)
+
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            FilledTonalButton(
-                onClick = {
-                    showHistory = !showHistory
-                    if (showHistory) showSettings = false
-                },
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+            // Top Bar: [History] — [Engineering Mode] — [Gear Settings]
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = if (showHistory) "Скрыть историю" else "История (${vm.history.size})",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            FilledTonalButton(
-                onClick = {
-                    showSettings = !showSettings
-                    if (showSettings) showHistory = false
-                },
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    text = if (showSettings) "⚙ Скрыть" else "⚙ Настройки",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-
-        // Expandable History Panel (drops down when History is clicked)
-        AnimatedVisibility(visible = showHistory) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 100.dp, max = 210.dp)
-                    .padding(top = 8.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
-                )
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Журнал вычислений",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (vm.history.isNotEmpty()) {
-                            Text(
-                                text = "Очистить",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.clickable { vm.clearHistory() }
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    if (vm.history.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Пока нет вычислений",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 14.sp
-                            )
-                        }
+                // 1. History button (left, kept as is)
+                FilledTonalButton(
+                    onClick = {
+                        showHistory = !showHistory
+                        if (showHistory) showSettings = false
+                    },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    val histText = if (isRu) {
+                        if (showHistory) "Скрыть" else "История (${vm.history.size})"
                     } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        if (showHistory) "Hide" else "History (${vm.history.size})"
+                    }
+                    Text(
+                        text = histText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // 2. Engineering calculator toggle button (center, between History and Settings)
+                FilledTonalButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        vm.toggleScientificMode()
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = if (vm.isScientificMode)
+                            MaterialTheme.colorScheme.primaryContainer
+                        else
+                            MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = if (vm.isScientificMode)
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        else
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    val sciText = if (isRu) {
+                        if (vm.isScientificMode) "f(x) Обычн." else "f(x) Инж."
+                    } else {
+                        if (vm.isScientificMode) "f(x) Basic" else "f(x) Sci"
+                    }
+                    Text(
+                        text = sciText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // 3. Settings gear button (right, dropdown panel like History)
+                FilledTonalButton(
+                    onClick = {
+                        showSettings = !showSettings
+                        if (showSettings) showHistory = false
+                    },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    val settingsText = if (isRu) {
+                        if (showSettings) "⚙ Скрыть" else "⚙ Настройки"
+                    } else {
+                        if (showSettings) "⚙ Hide" else "⚙ Settings"
+                    }
+                    Text(
+                        text = settingsText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Expandable History Panel
+            AnimatedVisibility(visible = showHistory) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 90.dp, max = 190.dp)
+                        .padding(top = 8.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.76f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            items(vm.history) { item ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .clickable {
-                                            vm.onHistoryItemSelected(item)
-                                            showHistory = false
-                                        }
-                                        .padding(vertical = 6.dp, horizontal = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = item.expression,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 15.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = "= ${item.result}",
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 16.sp
-                                    )
+                            Text(
+                                text = if (isRu) "Журнал вычислений" else "Calculation History",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (vm.history.isNotEmpty()) {
+                                Text(
+                                    text = if (isRu) "Очистить" else "Clear",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable { vm.clearHistory() }
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        if (vm.history.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isRu) "Пока нет вычислений" else "No calculations yet",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(vm.history) { item ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                vm.onHistoryItemSelected(item)
+                                                showHistory = false
+                                            }
+                                            .padding(vertical = 6.dp, horizontal = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = item.expression,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 15.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = "= ${item.result}",
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 16.sp
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }
 
-        // Expandable Settings Panel (drops down just like History when Gear icon is clicked)
-        AnimatedVisibility(visible = showSettings) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 260.dp)
-                    .padding(top = 8.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f)
-                )
-            ) {
-                Column(
+            // Expandable Settings Panel (drops down just like History)
+            AnimatedVisibility(visible = showSettings) {
+                Card(
                     modifier = Modifier
-                        .padding(12.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .fillMaxWidth()
+                        .heightIn(max = 250.dp)
+                        .padding(top = 8.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
+                    )
                 ) {
-                    Text(
-                        text = "Настройки темы и кнопок",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    // 1. Theme Mode (Auto / Dark / Light)
-                    Text(
-                        text = "Режим темы",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Column(
+                        modifier = Modifier
+                            .padding(12.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        val modes = listOf(
-                            ThemeMode.SYSTEM to "Авто",
-                            ThemeMode.DARK to "Тёмная",
-                            ThemeMode.LIGHT to "Светлая"
-                        )
-                        for ((mode, label) in modes) {
-                            SettingsOptionChip(
-                                label = label,
-                                selected = vm.themeMode == mode,
-                                modifier = Modifier.weight(1f),
-                                onClick = { vm.updateThemeMode(mode) }
+                        // 1. Language (RU / EN)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isRu) "Язык" else "Language",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.width(130.dp)
+                            ) {
+                                SettingsOptionChip(
+                                    label = "RU",
+                                    selected = vm.language == AppLanguage.RU,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { vm.updateLanguage(AppLanguage.RU) }
+                                )
+                                SettingsOptionChip(
+                                    label = "EN",
+                                    selected = vm.language == AppLanguage.EN,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { vm.updateLanguage(AppLanguage.EN) }
+                                )
+                            }
                         }
-                    }
 
-                    // 2. Color Palette (Improved Theme customization)
-                    Text(
-                        text = "Цветовое оформление темы",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        val palettes = listOf(
-                            ThemePalette.OCEAN to "Океан",
-                            ThemePalette.EMERALD to "Изумруд",
-                            ThemePalette.AMETHYST to "Аметист",
-                            ThemePalette.AMBER to "Янтарь",
-                            ThemePalette.ROSE to "Рубин"
+                        // 2. Theme Mode (Auto / Dark / Light)
+                        Text(
+                            text = if (isRu) "Режим темы" else "Theme Mode",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        for ((palette, title) in palettes) {
-                            SettingsOptionChip(
-                                label = title,
-                                selected = vm.themePalette == palette,
-                                modifier = Modifier.weight(1f),
-                                onClick = { vm.updateThemePalette(palette) }
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val modes = if (isRu) {
+                                listOf(
+                                    ThemeMode.SYSTEM to "Авто",
+                                    ThemeMode.DARK to "Тёмная",
+                                    ThemeMode.LIGHT to "Светлая"
+                                )
+                            } else {
+                                listOf(
+                                    ThemeMode.SYSTEM to "Auto",
+                                    ThemeMode.DARK to "Dark",
+                                    ThemeMode.LIGHT to "Light"
+                                )
+                            }
+                            for ((mode, label) in modes) {
+                                SettingsOptionChip(
+                                    label = label,
+                                    selected = vm.themeMode == mode,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { vm.updateThemeMode(mode) }
+                                )
+                            }
                         }
-                    }
 
-                    // 3. Button Shape Selection (Round / Rounded / Square)
-                    Text(
-                        text = "Форма кнопок",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        val shapes = listOf(
-                            ButtonShapeMode.ROUND to "Круглые",
-                            ButtonShapeMode.ROUNDED to "Скруглённые",
-                            ButtonShapeMode.SQUARE to "Квадратные"
+                        // 3. Visual Color Palette Swatches (no text labels, pure color badges)
+                        Text(
+                            text = if (isRu) "Палитра темы" else "Theme Palette",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        for ((shapeOption, label) in shapes) {
-                            SettingsOptionChip(
-                                label = label,
-                                selected = vm.buttonShapeMode == shapeOption,
-                                modifier = Modifier.weight(1f),
-                                onClick = { vm.updateButtonShapeMode(shapeOption) }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val swatchColors = listOf(
+                                Triple(ThemePalette.OCEAN, Color(0xFF38BDF8), Color(0xFF0284C7)),
+                                Triple(ThemePalette.EMERALD, Color(0xFF34D399), Color(0xFF059669)),
+                                Triple(ThemePalette.AMETHYST, Color(0xFFC084FC), Color(0xFF7C3AED)),
+                                Triple(ThemePalette.AMBER, Color(0xFFFBBF24), Color(0xFFD97706)),
+                                Triple(ThemePalette.ROSE, Color(0xFFFB7185), Color(0xFFE11D48))
                             )
+                            for ((palette, topCol, botCol) in swatchColors) {
+                                ColorPaletteSwatch(
+                                    topColor = topCol,
+                                    bottomColor = botCol,
+                                    selected = vm.themePalette == palette,
+                                    onClick = { vm.updateThemePalette(palette) }
+                                )
+                            }
+                        }
+
+                        // 4. Button Shape (Round / Rounded / Square)
+                        Text(
+                            text = if (isRu) "Форма кнопок" else "Button Shape",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val shapes = if (isRu) {
+                                listOf(
+                                    ButtonShapeMode.ROUND to "Круглые",
+                                    ButtonShapeMode.ROUNDED to "Скруглённые",
+                                    ButtonShapeMode.SQUARE to "Квадратные"
+                                )
+                            } else {
+                                listOf(
+                                    ButtonShapeMode.ROUND to "Round",
+                                    ButtonShapeMode.ROUNDED to "Rounded",
+                                    ButtonShapeMode.SQUARE to "Square"
+                                )
+                            }
+                            for ((shapeOption, label) in shapes) {
+                                SettingsOptionChip(
+                                    label = label,
+                                    selected = vm.buttonShapeMode == shapeOption,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { vm.updateButtonShapeMode(shapeOption) }
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // Display Area
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .padding(vertical = 6.dp),
-            verticalArrangement = Arrangement.Bottom,
-            horizontalAlignment = Alignment.End
-        ) {
-            val exprText = if (vm.expression.isEmpty()) "0" else vm.expression
-            val exprFontSize = when {
-                exprText.length > 22 -> 24.sp
-                exprText.length > 15 -> 32.sp
-                vm.isScientificMode -> 38.sp
-                else -> 46.sp
-            }
-            Text(
-                text = exprText,
-                fontSize = exprFontSize,
-                lineHeight = exprFontSize * 1.15f,
-                fontWeight = FontWeight.Light,
-                color = MaterialTheme.colorScheme.onBackground,
-                textAlign = TextAlign.End,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = if (vm.preview.isNotEmpty()) "= ${vm.preview}" else "",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (vm.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(30.dp)
-            )
-
-            // Action & Mode Row: Sign toggle, Advanced Calculator expander button, and Backspace
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        vm.onToggleSign()
-                    },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Text(text = "+/− Знак", fontSize = 14.sp)
-                }
-
-                FilledTonalButton(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        vm.toggleScientificMode()
-                    },
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = if (vm.isScientificMode) "f(x) Обычный ▴" else "f(x) Инженерный ▾",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                IconButton(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        vm.onBackspace()
-                    },
-                    enabled = vm.expression.isNotEmpty() || vm.isError
-                ) {
-                    Text(
-                        text = "⌫",
-                        fontSize = 24.sp,
-                        color = if (vm.expression.isNotEmpty() || vm.isError)
-                            MaterialTheme.colorScheme.primary
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    )
-                }
-            }
-        }
-
-        // Expandable Advanced / Scientific Keypad (3 rows x 5 columns)
-        AnimatedVisibility(visible = vm.isScientificMode) {
-            val sciRows = listOf(
-                listOf(
-                    CalcButtonSpec(if (vm.isDegreeMode) "DEG" else "RAD", CalcButtonKind.SCIENTIFIC) { vm.toggleDegreeMode() },
-                    CalcButtonSpec("sin", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sin") },
-                    CalcButtonSpec("cos", CalcButtonKind.SCIENTIFIC) { vm.onFunction("cos") },
-                    CalcButtonSpec("tan", CalcButtonKind.SCIENTIFIC) { vm.onFunction("tan") },
-                    CalcButtonSpec("π", CalcButtonKind.SCIENTIFIC) { vm.onConstant("π") }
-                ),
-                listOf(
-                    CalcButtonSpec("sin⁻¹", CalcButtonKind.SCIENTIFIC) { vm.onFunction("asin") },
-                    CalcButtonSpec("cos⁻¹", CalcButtonKind.SCIENTIFIC) { vm.onFunction("acos") },
-                    CalcButtonSpec("tan⁻¹", CalcButtonKind.SCIENTIFIC) { vm.onFunction("atan") },
-                    CalcButtonSpec("ln", CalcButtonKind.SCIENTIFIC) { vm.onFunction("ln") },
-                    CalcButtonSpec("log", CalcButtonKind.SCIENTIFIC) { vm.onFunction("log") }
-                ),
-                listOf(
-                    CalcButtonSpec("√x", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sqrt") },
-                    CalcButtonSpec("xʸ", CalcButtonKind.SCIENTIFIC) { vm.onPower() },
-                    CalcButtonSpec("x²", CalcButtonKind.SCIENTIFIC) { vm.onSquare() },
-                    CalcButtonSpec("n!", CalcButtonKind.SCIENTIFIC) { vm.onFactorial() },
-                    CalcButtonSpec("e", CalcButtonKind.SCIENTIFIC) { vm.onConstant("e") }
-                )
-            )
-
+            // Display Area
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(7.dp)
+                    .weight(1f)
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.Bottom,
+                horizontalAlignment = Alignment.End
             ) {
-                for (row in sciRows) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                val exprText = if (vm.expression.isEmpty()) "0" else vm.expression
+                val exprFontSize = when {
+                    exprText.length > 22 -> 24.sp
+                    exprText.length > 14 -> 34.sp
+                    else -> 44.sp
+                }
+                Text(
+                    text = exprText,
+                    fontSize = exprFontSize,
+                    lineHeight = exprFontSize * 1.15f,
+                    fontWeight = FontWeight.Light,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    textAlign = TextAlign.End,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                val previewStr = vm.localizedPreview()
+                Text(
+                    text = if (previewStr.isNotEmpty()) "= $previewStr" else "",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (vm.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                )
+
+                // Utility Row: Sign toggle on left, Backspace on right
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            vm.onToggleSign()
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        for (btn in row) {
+                        Text(
+                            text = if (isRu) "+/− Знак" else "+/− Sign",
+                            fontSize = 14.sp
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            vm.onBackspace()
+                        },
+                        enabled = vm.expression.isNotEmpty() || vm.isError
+                    ) {
+                        Text(
+                            text = "⌫",
+                            fontSize = 24.sp,
+                            color = if (vm.expression.isNotEmpty() || vm.isError)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        )
+                    }
+                }
+            }
+
+            // Fixed-Area Keypad Container:
+            // Standard mode = 5 rows x 4 cols.
+            // Engineering mode = 6 rows x 5 cols (1 row on top + 1 col on left, main buttons smoothly shrink).
+            val sciProgress by animateFloatAsState(
+                targetValue = if (vm.isScientificMode) 1f else 0f,
+                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                label = "scientificLayoutProgress"
+            )
+
+            val topSciButtons = listOf(
+                CalcButtonSpec(if (vm.isDegreeMode) "DEG" else "RAD", CalcButtonKind.SCIENTIFIC) { vm.toggleDegreeMode() },
+                CalcButtonSpec("sin", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sin") },
+                CalcButtonSpec("cos", CalcButtonKind.SCIENTIFIC) { vm.onFunction("cos") },
+                CalcButtonSpec("tan", CalcButtonKind.SCIENTIFIC) { vm.onFunction("tan") },
+                CalcButtonSpec("ln", CalcButtonKind.SCIENTIFIC) { vm.onFunction("ln") }
+            )
+
+            val leftSciButtons = listOf(
+                CalcButtonSpec("√x", CalcButtonKind.SCIENTIFIC) { vm.onFunction("sqrt") },
+                CalcButtonSpec("xʸ", CalcButtonKind.SCIENTIFIC) { vm.onPower() },
+                CalcButtonSpec("log", CalcButtonKind.SCIENTIFIC) { vm.onFunction("log") },
+                CalcButtonSpec("n!", CalcButtonKind.SCIENTIFIC) { vm.onFactorial() },
+                CalcButtonSpec("π", CalcButtonKind.SCIENTIFIC) { vm.onConstant("π") }
+            )
+
+            val mainRows = listOf(
+                listOf(
+                    CalcButtonSpec("AC", CalcButtonKind.CLEAR) { vm.onClear() },
+                    CalcButtonSpec("( )", CalcButtonKind.ACTION) { vm.onParentheses() },
+                    CalcButtonSpec("%", CalcButtonKind.ACTION) { vm.onPercent() },
+                    CalcButtonSpec("÷", CalcButtonKind.OPERATOR) { vm.onOperator("÷") }
+                ),
+                listOf(
+                    CalcButtonSpec("7", CalcButtonKind.NUMBER) { vm.onDigit("7") },
+                    CalcButtonSpec("8", CalcButtonKind.NUMBER) { vm.onDigit("8") },
+                    CalcButtonSpec("9", CalcButtonKind.NUMBER) { vm.onDigit("9") },
+                    CalcButtonSpec("×", CalcButtonKind.OPERATOR) { vm.onOperator("×") }
+                ),
+                listOf(
+                    CalcButtonSpec("4", CalcButtonKind.NUMBER) { vm.onDigit("4") },
+                    CalcButtonSpec("5", CalcButtonKind.NUMBER) { vm.onDigit("5") },
+                    CalcButtonSpec("6", CalcButtonKind.NUMBER) { vm.onDigit("6") },
+                    CalcButtonSpec("−", CalcButtonKind.OPERATOR) { vm.onOperator("−") }
+                ),
+                listOf(
+                    CalcButtonSpec("1", CalcButtonKind.NUMBER) { vm.onDigit("1") },
+                    CalcButtonSpec("2", CalcButtonKind.NUMBER) { vm.onDigit("2") },
+                    CalcButtonSpec("3", CalcButtonKind.NUMBER) { vm.onDigit("3") },
+                    CalcButtonSpec("+", CalcButtonKind.OPERATOR) { vm.onOperator("+") }
+                ),
+                listOf(
+                    CalcButtonSpec("00", CalcButtonKind.NUMBER) { vm.onDigit("00") },
+                    CalcButtonSpec("0", CalcButtonKind.NUMBER) { vm.onDigit("0") },
+                    CalcButtonSpec(".", CalcButtonKind.NUMBER) { vm.onDecimalPoint() },
+                    CalcButtonSpec("=", CalcButtonKind.EQUALS) { vm.onEquals() }
+                )
+            )
+
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(fixedKeypadHeight)
+            ) {
+                val areaW = maxWidth
+                val areaH = maxHeight
+                val gap = 10.dp * (1f - sciProgress) + 8.dp * sciProgress
+
+                val cols = 4f + sciProgress // 4.0 -> 5.0
+                val rows = 5f + sciProgress // 5.0 -> 6.0
+
+                val cellW = (areaW - gap * (cols - 1f)) / cols
+                val cellH = (areaH - gap * (rows - 1f)) / rows
+                val stepX = cellW + gap
+                val stepY = cellH + gap
+
+                val isRoundMode = vm.buttonShapeMode == ButtonShapeMode.ROUND
+                val fontScale = 1f - 0.16f * sciProgress
+
+                // 1. Top Scientific Row (5 buttons across top: index 0..4)
+                if (sciProgress > 0.01f) {
+                    for (idx in topSciButtons.indices) {
+                        val btn = topSciButtons[idx]
+                        val xPos = if (idx == 0) 0.dp else stepX * ((idx - 1).toFloat() + sciProgress)
+                        val yPos = 0.dp
+                        Box(
+                            modifier = Modifier
+                                .offset(x = xPos, y = yPos)
+                                .size(width = cellW, height = cellH)
+                                .graphicsLayer {
+                                    alpha = sciProgress
+                                    val s = 0.65f + 0.35f * sciProgress
+                                    scaleX = s
+                                    scaleY = s
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val btnModifier = if (isRoundMode) {
+                                Modifier.size(minOf(cellW, cellH))
+                            } else {
+                                Modifier.fillMaxSize()
+                            }
                             CalculatorKeyButton(
                                 spec = btn,
                                 shape = buttonShape,
                                 isDarkTheme = isDarkTheme,
-                                fontSizeOverride = 14.sp,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(42.dp),
+                                fontSizeOverride = (15f * fontScale).sp,
+                                modifier = btnModifier,
+                                onTap = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    btn.onClick()
+                                }
+                            )
+                        }
+                    }
+
+                    // 2. Left Scientific Column (5 buttons down left side alongside main rows: index 0..4)
+                    for (rIdx in leftSciButtons.indices) {
+                        val btn = leftSciButtons[rIdx]
+                        val xPos = 0.dp
+                        val yPos = stepY * (rIdx.toFloat() + sciProgress)
+                        Box(
+                            modifier = Modifier
+                                .offset(x = xPos, y = yPos)
+                                .size(width = cellW, height = cellH)
+                                .graphicsLayer {
+                                    alpha = sciProgress
+                                    val s = 0.65f + 0.35f * sciProgress
+                                    scaleX = s
+                                    scaleY = s
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val btnModifier = if (isRoundMode) {
+                                Modifier.size(minOf(cellW, cellH))
+                            } else {
+                                Modifier.fillMaxSize()
+                            }
+                            CalculatorKeyButton(
+                                spec = btn,
+                                shape = buttonShape,
+                                isDarkTheme = isDarkTheme,
+                                fontSizeOverride = (15f * fontScale).sp,
+                                modifier = btnModifier,
+                                onTap = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    btn.onClick()
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // 3. Main 5x4 Keypad (smoothly shrinks and shifts right/down as sciProgress goes 0f -> 1f)
+                for (rIdx in mainRows.indices) {
+                    val row = mainRows[rIdx]
+                    for (cIdx in row.indices) {
+                        val btn = row[cIdx]
+                        val xPos = stepX * (cIdx.toFloat() + sciProgress)
+                        val yPos = stepY * (rIdx.toFloat() + sciProgress)
+
+                        val baseFont = if (btn.kind == CalcButtonKind.OPERATOR || btn.kind == CalcButtonKind.EQUALS) {
+                            26f
+                        } else {
+                            22f
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .offset(x = xPos, y = yPos)
+                                .size(width = cellW, height = cellH),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            // In ROUND mode, enforce exact 1:1 square dimensions (diameter = min(cellW, cellH))
+                            // so CircleShape produces a 100% geometrically perfect circle
+                            val btnModifier = if (isRoundMode) {
+                                Modifier.size(minOf(cellW, cellH))
+                            } else {
+                                Modifier.fillMaxSize()
+                            }
+                            CalculatorKeyButton(
+                                spec = btn,
+                                shape = buttonShape,
+                                isDarkTheme = isDarkTheme,
+                                fontSizeOverride = (baseFont * fontScale).sp,
+                                modifier = btnModifier,
                                 onTap = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     btn.onClick()
@@ -674,69 +905,48 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                 }
             }
         }
+    }
+}
 
-        // Standard Keypad Grid (5 rows x 4 columns)
-        val mainButtonHeight = if (vm.isScientificMode) 54.dp else 66.dp
-        val mainSpacing = if (vm.isScientificMode) 8.dp else 10.dp
-
-        val rows = listOf(
-            listOf(
-                CalcButtonSpec("AC", CalcButtonKind.CLEAR) { vm.onClear() },
-                CalcButtonSpec("( )", CalcButtonKind.ACTION) { vm.onParentheses() },
-                CalcButtonSpec("%", CalcButtonKind.ACTION) { vm.onPercent() },
-                CalcButtonSpec("÷", CalcButtonKind.OPERATOR) { vm.onOperator("÷") }
-            ),
-            listOf(
-                CalcButtonSpec("7", CalcButtonKind.NUMBER) { vm.onDigit("7") },
-                CalcButtonSpec("8", CalcButtonKind.NUMBER) { vm.onDigit("8") },
-                CalcButtonSpec("9", CalcButtonKind.NUMBER) { vm.onDigit("9") },
-                CalcButtonSpec("×", CalcButtonKind.OPERATOR) { vm.onOperator("×") }
-            ),
-            listOf(
-                CalcButtonSpec("4", CalcButtonKind.NUMBER) { vm.onDigit("4") },
-                CalcButtonSpec("5", CalcButtonKind.NUMBER) { vm.onDigit("5") },
-                CalcButtonSpec("6", CalcButtonKind.NUMBER) { vm.onDigit("6") },
-                CalcButtonSpec("−", CalcButtonKind.OPERATOR) { vm.onOperator("−") }
-            ),
-            listOf(
-                CalcButtonSpec("1", CalcButtonKind.NUMBER) { vm.onDigit("1") },
-                CalcButtonSpec("2", CalcButtonKind.NUMBER) { vm.onDigit("2") },
-                CalcButtonSpec("3", CalcButtonKind.NUMBER) { vm.onDigit("3") },
-                CalcButtonSpec("+", CalcButtonKind.OPERATOR) { vm.onOperator("+") }
-            ),
-            listOf(
-                CalcButtonSpec("00", CalcButtonKind.NUMBER) { vm.onDigit("00") },
-                CalcButtonSpec("0", CalcButtonKind.NUMBER) { vm.onDigit("0") },
-                CalcButtonSpec(".", CalcButtonKind.NUMBER) { vm.onDecimalPoint() },
-                CalcButtonSpec("=", CalcButtonKind.EQUALS) { vm.onEquals() }
+@Composable
+fun ColorPaletteSwatch(
+    topColor: Color,
+    bottomColor: Color,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.12f else 1f,
+        animationSpec = tween(durationMillis = 150),
+        label = "swatchScale"
+    )
+    Box(
+        modifier = Modifier
+            .scale(scale)
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(
+                brush = Brush.linearGradient(
+                    colors = listOf(topColor, bottomColor),
+                    start = Offset.Zero,
+                    end = Offset(100f, 100f)
+                )
             )
-        )
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(mainSpacing)
-        ) {
-            for (row in rows) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(mainSpacing)
-                ) {
-                    for (btn in row) {
-                        CalculatorKeyButton(
-                            spec = btn,
-                            shape = buttonShape,
-                            isDarkTheme = isDarkTheme,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(mainButtonHeight),
-                            onTap = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                btn.onClick()
-                            }
-                        )
-                    }
-                }
-            }
+            .border(
+                width = if (selected) 2.5.dp else 1.dp,
+                color = if (selected) MaterialTheme.colorScheme.onSurface else Color.White.copy(alpha = 0.4f),
+                shape = CircleShape
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selected) {
+            Text(
+                text = "✓",
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -770,7 +980,7 @@ fun SettingsOptionChip(
             .background(bg)
             .border(1.dp, borderColor, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 4.dp),
+            .padding(vertical = 7.dp, horizontal = 4.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -802,7 +1012,7 @@ fun CalculatorKeyButton(
         label = "buttonGlow"
     )
     val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
+        targetValue = if (isPressed) 0.95f else 1f,
         animationSpec = tween(durationMillis = 90),
         label = "buttonScale"
     )
@@ -836,9 +1046,9 @@ fun CalculatorKeyButton(
 
     // Cold white glow for dark theme, deep dark blue glow for light theme
     val glowColor = if (isDarkTheme) {
-        Color(0xFFE8F4FF) // Cold icy white
+        Color(0xFFE8F4FF)
     } else {
-        Color(0xFF0D2B6B) // Deep dark blue
+        Color(0xFF0D2B6B)
     }
 
     // Translucent + semi-3D gradient colors
@@ -850,7 +1060,6 @@ fun CalculatorKeyButton(
     val topSurfaceColor = lerp(baseBgColor.copy(alpha = topAlpha), topHighlightTint, 0.22f)
     val bottomSurfaceColor = lerp(baseBgColor.copy(alpha = bottomAlpha), bottomShadeTint, 0.25f)
 
-    // Semi-3D beveled border brush (top-left bright rim, bottom-right deep shadow rim)
     val topRimBase = if (isDarkTheme) {
         Color.White.copy(alpha = 0.34f)
     } else {
@@ -875,7 +1084,6 @@ fun CalculatorKeyButton(
         modifier = modifier
             .scale(pressScale)
             .drawBehind {
-                // Soft 3D drop shadow under the button
                 val shadowRadius = size.maxDimension * 0.58f
                 drawCircle(
                     brush = Brush.radialGradient(
@@ -890,7 +1098,6 @@ fun CalculatorKeyButton(
                     center = Offset(center.x, center.y + 4.dp.toPx())
                 )
 
-                // Small-radius radial glow around button when pressed
                 if (glowProgress > 0.01f) {
                     val glowRadius = size.maxDimension * 0.72f
                     drawCircle(
@@ -915,7 +1122,6 @@ fun CalculatorKeyButton(
                 )
             )
             .drawBehind {
-                // Top inner specular highlight for 3D glass depth
                 drawRect(
                     brush = Brush.verticalGradient(
                         colors = listOf(
@@ -926,7 +1132,6 @@ fun CalculatorKeyButton(
                         endY = size.height * 0.42f
                     )
                 )
-                // Inner radial illumination in a small radius on press
                 if (glowProgress > 0.01f) {
                     val innerRadius = size.maxDimension * 0.56f
                     drawCircle(

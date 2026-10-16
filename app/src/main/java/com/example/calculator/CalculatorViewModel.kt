@@ -23,6 +23,10 @@ enum class ButtonShapeMode {
     ROUND, ROUNDED, SQUARE
 }
 
+enum class AppLanguage {
+    RU, EN
+}
+
 class CalculatorViewModel : ViewModel() {
 
     var expression by mutableStateOf("")
@@ -41,6 +45,9 @@ class CalculatorViewModel : ViewModel() {
         private set
 
     var buttonShapeMode by mutableStateOf(ButtonShapeMode.ROUNDED)
+        private set
+
+    var language by mutableStateOf(AppLanguage.RU)
         private set
 
     var isScientificMode by mutableStateOf(false)
@@ -105,6 +112,10 @@ class CalculatorViewModel : ViewModel() {
         buttonShapeMode = shapeMode
     }
 
+    fun updateLanguage(lang: AppLanguage) {
+        language = lang
+    }
+
     fun toggleScientificMode() {
         isScientificMode = !isScientificMode
     }
@@ -116,6 +127,21 @@ class CalculatorViewModel : ViewModel() {
 
     fun toggleInverseTrig() {
         isInverseTrig = !isInverseTrig
+    }
+
+    fun localizedPreview(): String {
+        if (preview.isEmpty()) return ""
+        if (!isError || language == AppLanguage.RU) return preview
+        return when (preview) {
+            "Деление на ноль" -> "Division by zero"
+            "Не определено" -> "Undefined"
+            "Вне области определения" -> "Out of domain"
+            "Логарифм от <= 0" -> "Logarithm of <= 0"
+            "Корень из отрицательного числа" -> "Root of negative number"
+            "Факториал только для целых >= 0" -> "Factorial requires int >= 0"
+            "Переполнение числа" -> "Number overflow"
+            else -> "Expression error"
+        }
     }
 
     fun onDigit(digit: String) {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Android-Калькулятор (Инженерный режим + Настройки темы)</title>
+  <title>Android-Калькулятор (Инженерный режим + RU/EN)</title>
   <style>
     :root {
       --bg: #0B1120;
@@ -20,10 +20,9 @@
       --on-tertiary-container: #7DD3FC;
       --error-container: rgba(127, 29, 29, 0.68);
       --on-error-container: #FECACA;
-      --error: #F87171;
       --border: rgba(255, 255, 255, 0.22);
       --glow-color: rgba(232, 244, 255, 0.62);
-      --btn-radius: 20px;
+      --btn-radius: 18px;
     }
     [data-theme="light"] {
       --bg: #F1F5F9;
@@ -40,177 +39,84 @@
       --on-tertiary-container: #0369A1;
       --error-container: rgba(254, 226, 226, 0.78);
       --on-error-container: #B91C1C;
-      --error: #DC2626;
       --border: rgba(15, 23, 42, 0.16);
       --glow-color: rgba(13, 43, 107, 0.52);
     }
-    * {
-      box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
-    }
+    * { box-sizing: border-box; user-select: none; }
     body {
-      margin: 0;
-      padding: 16px;
+      margin: 0; padding: 16px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #060913;
-      color: var(--text);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
+      background: #060913; color: var(--text);
+      display: flex; justify-content: center; align-items: center; min-height: 100vh;
     }
     .phone-frame {
-      width: 100%;
-      max-width: 410px;
-      min-height: 760px;
-      background: var(--bg);
-      color: var(--text);
-      border-radius: 36px;
-      padding: 18px 16px 20px;
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--border);
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      transition: background 0.25s ease, color 0.25s ease;
+      width: 100%; max-width: 400px; height: 760px;
+      background: var(--bg); color: var(--text);
+      border-radius: 36px; padding: 16px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.55), 0 0 0 1px var(--border);
+      display: flex; flex-direction: column; justify-content: space-between;
     }
-    .top-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-    }
+    .top-bar { display: flex; gap: 8px; }
     .tonal-btn {
-      border: 1px solid var(--border);
-      background: var(--surface-variant);
-      color: var(--text);
-      padding: 9px 14px;
-      border-radius: 999px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.1s ease, background 0.2s ease;
-    }
-    .tonal-btn:active {
-      transform: scale(0.96);
+      flex: 1; border: 1px solid var(--border);
+      background: var(--surface-variant); color: var(--text);
+      padding: 8px 6px; border-radius: 999px;
+      font-size: 12px; font-weight: 600; cursor: pointer;
     }
     .panel-card {
-      margin-top: 8px;
-      background: var(--surface-variant);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 12px;
-      max-height: 240px;
-      overflow-y: auto;
-      display: none;
-      flex-direction: column;
-      gap: 8px;
+      margin-top: 8px; background: var(--surface-variant);
+      border: 1px solid var(--border); border-radius: 20px;
+      padding: 12px; display: none; flex-direction: column; gap: 8px;
     }
-    .panel-card.open {
-      display: flex;
-    }
-    .chip-row {
-      display: flex;
-      gap: 6px;
-    }
+    .panel-card.open { display: flex; }
+    .chip-row { display: flex; gap: 6px; align-items: center; }
     .chip {
-      flex: 1;
-      padding: 7px 4px;
-      font-size: 11px;
-      font-weight: 600;
-      text-align: center;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.06);
-      color: var(--text);
+      flex: 1; padding: 6px 4px; font-size: 11px; font-weight: 600;
+      text-align: center; border-radius: 10px; border: 1px solid var(--border);
       cursor: pointer;
     }
-    .chip.active {
-      background: var(--primary-container);
-      color: var(--on-primary-container);
-      border-color: var(--primary);
+    .chip.active { background: var(--primary-container); color: var(--on-primary-container); }
+    .swatch {
+      width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: bold; font-size: 14px;
+      border: 2px solid rgba(255,255,255,0.4);
     }
+    .swatch.active { border-color: #fff; transform: scale(1.1); }
     .display-area {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-end;
-      align-items: flex-end;
-      padding: 10px 4px;
+      flex: 1; display: flex; flex-direction: column;
+      justify-content: flex-end; align-items: flex-end; padding: 6px 4px;
     }
-    .expr-text {
-      font-size: 42px;
-      font-weight: 300;
-      text-align: right;
-      word-break: break-all;
-    }
-    .preview-text {
-      font-size: 22px;
-      font-weight: 500;
-      color: var(--text-muted);
-      min-height: 30px;
-      margin-top: 4px;
-    }
-    .utility-row {
-      width: 100%;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 6px;
-    }
-    .sci-grid {
-      display: none;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 7px;
-      margin-bottom: 8px;
-    }
-    .sci-grid.open {
-      display: grid;
-    }
-    .main-grid {
-      display: grid;
+    .expr-text { font-size: 40px; font-weight: 300; text-align: right; word-break: break-all; }
+    .preview-text { font-size: 20px; color: var(--text-muted); min-height: 26px; }
+    .utility-row { width: 100%; display: flex; justify-content: space-between; margin-top: 4px; }
+    .keypad-box {
+      width: 100%; height: 420px;
+      display: grid; gap: 8px;
       grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
+      grid-template-rows: repeat(5, 1fr);
+      transition: all 0.3s ease;
+    }
+    .keypad-box.sci {
+      grid-template-columns: repeat(5, 1fr);
+      grid-template-rows: repeat(6, 1fr);
     }
     .calc-btn {
-      position: relative;
-      height: 62px;
+      width: 100%; height: 100%;
       border-radius: var(--btn-radius);
       border: 1.3px solid var(--border);
-      background: linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(0,0,0,0.12) 100%), var(--secondary-container);
+      background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(0,0,0,0.12)), var(--secondary-container);
       color: var(--on-secondary-container);
-      font-size: 22px;
-      font-weight: 500;
-      cursor: pointer;
+      font-size: 20px; font-weight: 500; cursor: pointer;
       box-shadow: inset 0 1px 1px rgba(255,255,255,0.35), 0 4px 10px rgba(0,0,0,0.22);
-      transition: transform 0.08s ease, box-shadow 0.12s ease, border-radius 0.2s ease;
+      transition: transform 0.1s ease, box-shadow 0.12s ease, border-radius 0.2s ease;
+      justify-self: center; align-self: center;
     }
-    .sci-grid .calc-btn {
-      height: 42px;
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--primary);
-    }
-    .calc-btn.op {
-      background: linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(0,0,0,0.12) 100%), var(--tertiary-container);
-      color: var(--on-tertiary-container);
-      font-size: 25px;
-      font-weight: 600;
-    }
-    .calc-btn.clear {
-      background: linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(0,0,0,0.14) 100%), var(--error-container);
-      color: var(--on-error-container);
-      font-weight: 600;
-    }
-    .calc-btn.eq {
-      background: linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(0,0,0,0.14) 100%), var(--primary-container);
-      color: var(--on-primary-container);
-      font-size: 26px;
-      font-weight: 600;
+    .round-mode .calc-btn {
+      width: auto; height: 100%; aspect-ratio: 1 / 1; border-radius: 50%;
     }
     .calc-btn:active {
-      transform: scale(0.96);
+      transform: scale(0.95);
       box-shadow: 0 0 18px 4px var(--glow-color), inset 0 0 14px var(--glow-color);
     }
   </style>
@@ -219,162 +125,89 @@
   <div class="phone-frame" id="app">
     <div class="top-bar">
       <button class="tonal-btn" id="historyBtn" onclick="togglePanel('history')">История (0)</button>
+      <button class="tonal-btn" id="sciBtn" onclick="toggleSci()">f(x) Инж.</button>
       <button class="tonal-btn" id="settingsBtn" onclick="togglePanel('settings')">⚙ Настройки</button>
     </div>
-
     <div class="panel-card" id="historyPanel">
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);">
-        <span>Журнал вычислений</span>
-        <span style="color:var(--primary);cursor:pointer;" onclick="clearHist()">Очистить</span>
-      </div>
-      <div id="historyList" style="font-size:14px;color:var(--text-muted);text-align:center;padding:12px 0;">Пока нет вычислений</div>
+      <div id="historyList" style="font-size:13px;color:var(--text-muted);text-align:center;">Пока нет вычислений</div>
     </div>
-
     <div class="panel-card" id="settingsPanel">
-      <div style="font-size:12px;font-weight:600;color:var(--text-muted);">Режим темы</div>
       <div class="chip-row">
-        <div class="chip active" id="theme-dark" onclick="setTheme('dark')">Тёмная</div>
-        <div class="chip" id="theme-light" onclick="setTheme('light')">Светлая</div>
+        <span style="font-size:12px;color:var(--text-muted);flex:1;" id="langLabel">Язык</span>
+        <div class="chip active" id="lang-ru" onclick="setLang('ru')">RU</div>
+        <div class="chip" id="lang-en" onclick="setLang('en')">EN</div>
       </div>
-      <div style="font-size:12px;font-weight:600;color:var(--text-muted);">Форма кнопок</div>
+      <div class="chip-row" style="justify-content:space-evenly;padding:4px 0;">
+        <div class="swatch active" style="background:linear-gradient(135deg,#38BDF8,#0284C7)" onclick="setPalette('#38BDF8','rgba(2,132,199,0.68)',this)">✓</div>
+        <div class="swatch" style="background:linear-gradient(135deg,#34D399,#059669)" onclick="setPalette('#34D399','rgba(5,150,105,0.68)',this)"></div>
+        <div class="swatch" style="background:linear-gradient(135deg,#C084FC,#7C3AED)" onclick="setPalette('#C084FC','rgba(124,58,237,0.68)',this)"></div>
+        <div class="swatch" style="background:linear-gradient(135deg,#FBBF24,#D97706)" onclick="setPalette('#FBBF24','rgba(217,119,6,0.68)',this)"></div>
+        <div class="swatch" style="background:linear-gradient(135deg,#FB7185,#E11D48)" onclick="setPalette('#FB7185','rgba(225,29,72,0.68)',this)"></div>
+      </div>
       <div class="chip-row">
-        <div class="chip" id="shape-round" onclick="setShape('999px', 'round')">Круглые</div>
-        <div class="chip active" id="shape-rounded" onclick="setShape('20px', 'rounded')">Скруглённые</div>
-        <div class="chip" id="shape-square" onclick="setShape('5px', 'square')">Квадратные</div>
+        <div class="chip" id="shape-round" onclick="setShape('round')">Круглые</div>
+        <div class="chip active" id="shape-rounded" onclick="setShape('rounded')">Скруглённые</div>
+        <div class="chip" id="shape-square" onclick="setShape('square')">Квадратные</div>
       </div>
     </div>
-
     <div class="display-area">
       <div class="expr-text" id="exprDisplay">0</div>
       <div class="preview-text" id="previewDisplay"></div>
-      <div class="utility-row">
-        <button class="tonal-btn" onclick="press('sign')">+/− Знак</button>
-        <button class="tonal-btn" id="sciBtn" onclick="toggleSci()">f(x) Инженерный ▾</button>
-        <button class="tonal-btn" onclick="press('back')">⌫</button>
-      </div>
     </div>
-
-    <div class="sci-grid" id="sciGrid">
-      <button class="calc-btn" id="degBtn" onclick="toggleDeg()">DEG</button>
-      <button class="calc-btn" onclick="press('sin(')">sin</button>
-      <button class="calc-btn" onclick="press('cos(')">cos</button>
-      <button class="calc-btn" onclick="press('tan(')">tan</button>
-      <button class="calc-btn" onclick="press('π')">π</button>
-      <button class="calc-btn" onclick="press('asin(')">sin⁻¹</button>
-      <button class="calc-btn" onclick="press('acos(')">cos⁻¹</button>
-      <button class="calc-btn" onclick="press('atan(')">tan⁻¹</button>
-      <button class="calc-btn" onclick="press('ln(')">ln</button>
-      <button class="calc-btn" onclick="press('log(')">log</button>
-      <button class="calc-btn" onclick="press('√(')">√x</button>
-      <button class="calc-btn" onclick="press('^')">xʸ</button>
-      <button class="calc-btn" onclick="press('^2')">x²</button>
-      <button class="calc-btn" onclick="press('!')">n!</button>
-      <button class="calc-btn" onclick="press('e')">e</button>
-    </div>
-
-    <div class="main-grid">
-      <button class="calc-btn clear" onclick="press('AC')">AC</button>
-      <button class="calc-btn op" onclick="press('()')">( )</button>
-      <button class="calc-btn op" onclick="press('%')">%</button>
-      <button class="calc-btn op" onclick="press('÷')">÷</button>
-      <button class="calc-btn" onclick="press('7')">7</button>
-      <button class="calc-btn" onclick="press('8')">8</button>
-      <button class="calc-btn" onclick="press('9')">9</button>
-      <button class="calc-btn op" onclick="press('×')">×</button>
-      <button class="calc-btn" onclick="press('4')">4</button>
-      <button class="calc-btn" onclick="press('5')">5</button>
-      <button class="calc-btn" onclick="press('6')">6</button>
-      <button class="calc-btn op" onclick="press('−')">−</button>
-      <button class="calc-btn" onclick="press('1')">1</button>
-      <button class="calc-btn" onclick="press('2')">2</button>
-      <button class="calc-btn" onclick="press('3')">3</button>
-      <button class="calc-btn op" onclick="press('+')">+</button>
-      <button class="calc-btn" onclick="press('00')">00</button>
-      <button class="calc-btn" onclick="press('0')">0</button>
-      <button class="calc-btn" onclick="press('.')">.</button>
-      <button class="calc-btn eq" onclick="press('=')">=</button>
-    </div>
+    <div class="keypad-box" id="keypadBox"></div>
   </div>
   <script>
-    let expr = "";
-    let isDeg = true;
-    let hist = [];
-    function togglePanel(which) {
-      const h = document.getElementById('historyPanel');
-      const s = document.getElementById('settingsPanel');
-      if (which === 'history') {
-        h.classList.toggle('open');
-        s.classList.remove('open');
-      } else {
-        s.classList.toggle('open');
-        h.classList.remove('open');
-      }
-    }
-    function setTheme(mode) {
-      document.documentElement.setAttribute('data-theme', mode === 'light' ? 'light' : 'dark');
-      document.getElementById('theme-dark').classList.toggle('active', mode === 'dark');
-      document.getElementById('theme-light').classList.toggle('active', mode === 'light');
-    }
-    function setShape(radius, key) {
-      document.documentElement.style.setProperty('--btn-radius', radius);
-      ['round', 'rounded', 'square'].forEach(k => {
-        document.getElementById('shape-' + k).classList.toggle('active', k === key);
+    let sci = false, lang = 'ru', expr = '';
+    const mainRows = [
+      ['AC','( )','%','÷'],
+      ['7','8','9','×'],
+      ['4','5','6','−'],
+      ['1','2','3','+'],
+      ['00','0','.','=']
+    ];
+    const topSci = ['DEG','sin','cos','tan','ln'];
+    const leftSci = ['√x','xʸ','log','n!','π'];
+    function renderKeypad() {
+      const box = document.getElementById('keypadBox');
+      box.classList.toggle('sci', sci);
+      const items = [];
+      if (sci) topSci.forEach(k => items.push(k));
+      mainRows.forEach((row, r) => {
+        if (sci) items.push(leftSci[r]);
+        row.forEach(k => items.push(k));
       });
+      box.innerHTML = items.map(k => `<button class="calc-btn" onclick="press('${k}')">${k}</button>`).join('');
     }
-    function toggleSci() {
-      const g = document.getElementById('sciGrid');
-      const b = document.getElementById('sciBtn');
-      const open = g.classList.toggle('open');
-      b.textContent = open ? 'f(x) Обычный ▴' : 'f(x) Инженерный ▾';
+    function toggleSci() { sci = !sci; renderKeypad(); }
+    function togglePanel(p) {
+      document.getElementById(p === 'history' ? 'historyPanel' : 'settingsPanel').classList.toggle('open');
     }
-    function toggleDeg() {
-      isDeg = !isDeg;
-      document.getElementById('degBtn').textContent = isDeg ? 'DEG' : 'RAD';
-      render();
+    function setLang(l) {
+      lang = l;
+      document.getElementById('lang-ru').classList.toggle('active', l==='ru');
+      document.getElementById('lang-en').classList.toggle('active', l==='en');
+      document.getElementById('historyBtn').textContent = l==='ru' ? 'История (0)' : 'History (0)';
+      document.getElementById('sciBtn').textContent = l==='ru' ? 'f(x) Инж.' : 'f(x) Sci';
+      document.getElementById('settingsBtn').textContent = l==='ru' ? '⚙ Настройки' : '⚙ Settings';
     }
-    function press(val) {
-      if (val === 'AC') expr = "";
-      else if (val === 'back') expr = expr.slice(0, -1);
-      else if (val === '=') {
-        const r = calc(expr);
-        if (r !== null) {
-          hist.unshift({ e: expr, r: String(r) });
-          expr = String(r);
-          updateHist();
-        }
-      } else if (val === '()') {
-        expr += '(';
-      } else if (val === 'sign') {
-        expr = expr.startsWith('−') ? expr.slice(1) : '−' + expr;
-      } else {
-        expr += val;
-      }
-      render();
+    function setPalette(p, pc, el) {
+      document.documentElement.style.setProperty('--primary', p);
+      document.documentElement.style.setProperty('--primary-container', pc);
+      document.querySelectorAll('.swatch').forEach(s => { s.classList.remove('active'); s.textContent = ''; });
+      el.classList.add('active'); el.textContent = '✓';
     }
-    function calc(raw) {
-      if (!raw) return null;
-      try {
-        let s = raw.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-')
-                   .replace(/π/g, 'Math.PI').replace(/\be\b/g, 'Math.E')
-                   .replace(/√\(/g, 'Math.sqrt(').replace(/\^/g, '**');
-        const open = (s.match(/\(/g) || []).length;
-        const close = (s.match(/\)/g) || []).length;
-        if (open > close) s += ')'.repeat(open - close);
-        return Function('"use strict"; return (' + s + ')')();
-      } catch (e) { return null; }
+    function setShape(s) {
+      const box = document.getElementById('keypadBox');
+      box.classList.toggle('round-mode', s === 'round');
+      document.documentElement.style.setProperty('--btn-radius', s === 'square' ? '5px' : '18px');
+      ['round','rounded','square'].forEach(k => document.getElementById('shape-'+k).classList.toggle('active', k===s));
     }
-    function updateHist() {
-      document.getElementById('historyBtn').textContent = `История (${hist.length})`;
-      const el = document.getElementById('historyList');
-      if (!hist.length) { el.textContent = 'Пока нет вычислений'; return; }
-      el.innerHTML = hist.map(h => `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>${h.e}</span><b>= ${h.r}</b></div>`).join('');
-    }
-    function clearHist() { hist = []; updateHist(); }
-    function render() {
+    function press(k) {
+      if (k === 'AC') expr = '';
+      else expr += k;
       document.getElementById('exprDisplay').textContent = expr || '0';
-      const r = calc(expr);
-      document.getElementById('previewDisplay').textContent = (r !== null && String(r) !== expr) ? '= ' + r : '';
     }
+    renderKeypad();
   </script>
 </body>
 </html>

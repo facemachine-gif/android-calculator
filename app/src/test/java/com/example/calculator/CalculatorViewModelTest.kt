@@ -42,11 +42,15 @@ class CalculatorViewModelTest {
     }
 
     @Test
-    fun testScientificModeAndSettingsState() {
+    fun testScientificModeLanguageAndSettingsState() {
         val vm = CalculatorViewModel()
         assertFalse(vm.isScientificMode)
         vm.toggleScientificMode()
         assertTrue(vm.isScientificMode)
+
+        assertEquals(AppLanguage.RU, vm.language)
+        vm.updateLanguage(AppLanguage.EN)
+        assertEquals(AppLanguage.EN, vm.language)
 
         vm.updateThemeMode(ThemeMode.DARK)
         assertEquals(ThemeMode.DARK, vm.themeMode)
@@ -65,7 +69,7 @@ class CalculatorViewModelTest {
 
         vm.onBackspace()
         vm.onBackspace()
-        vm.onBackspace() // removes "sin(" in one step
+        vm.onBackspace()
         assertEquals("", vm.expression)
     }
 
