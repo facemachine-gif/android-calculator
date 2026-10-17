@@ -9,6 +9,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +40,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -396,6 +405,9 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
     var showSettings by remember { mutableStateOf(false) }
     val isRu = vm.language == AppLanguage.RU
 
+    val historyChipIndex = vm.topBarOrder.indexOf(TopBarItem.HISTORY).coerceIn(0, 2)
+    val settingsChipIndex = vm.topBarOrder.indexOf(TopBarItem.SETTINGS).coerceIn(0, 2)
+
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -454,6 +466,7 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                     vm = vm,
                     isRu = isRu,
                     visible = showHistory && !vm.isCustomizationMode,
+                    chipSlotIndex = historyChipIndex,
                     maxCardHeight = 190.dp,
                     onSelectHistory = { item ->
                         vm.onHistoryItemSelected(item)
@@ -465,6 +478,7 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                     vm = vm,
                     isRu = isRu,
                     visible = showSettings && !vm.isCustomizationMode,
+                    chipSlotIndex = settingsChipIndex,
                     maxCardHeight = 290.dp,
                     onStartCustomization = {
                         showSettings = false
@@ -530,6 +544,7 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                         vm = vm,
                         isRu = isRu,
                         visible = showHistory && !vm.isCustomizationMode,
+                        chipSlotIndex = historyChipIndex,
                         maxCardHeight = screenH * 0.72f,
                         onSelectHistory = { item ->
                             vm.onHistoryItemSelected(item)
@@ -541,6 +556,7 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                         vm = vm,
                         isRu = isRu,
                         visible = showSettings && !vm.isCustomizationMode,
+                        chipSlotIndex = settingsChipIndex,
                         maxCardHeight = screenH * 0.78f,
                         onStartCustomization = {
                             showSettings = false
@@ -780,10 +796,46 @@ fun HistoryDropdownPanel(
     vm: CalculatorViewModel,
     isRu: Boolean,
     visible: Boolean,
+    chipSlotIndex: Int,
     maxCardHeight: Dp,
     onSelectHistory: (HistoryItem) -> Unit
 ) {
-    AnimatedVisibility(visible = visible) {
+    val pivotX = when (chipSlotIndex) {
+        0 -> 0.16f
+        1 -> 0.50f
+        else -> 0.84f
+    }
+    val enterAnim = remember(chipSlotIndex) {
+        scaleIn(
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+            initialScale = 0.18f,
+            transformOrigin = TransformOrigin(pivotX, 0f)
+        ) + expandVertically(
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+            expandFrom = Alignment.Top
+        ) + fadeIn(
+            animationSpec = tween(durationMillis = 170)
+        )
+    }
+
+    val exitAnim = remember(chipSlotIndex) {
+        scaleOut(
+            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+            targetScale = 0.18f,
+            transformOrigin = TransformOrigin(pivotX, 0f)
+        ) + shrinkVertically(
+            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+            shrinkTowards = Alignment.Top
+        ) + fadeOut(
+            animationSpec = tween(durationMillis = 150)
+        )
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = enterAnim,
+        exit = exitAnim
+    ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -868,10 +920,46 @@ fun SettingsDropdownPanel(
     vm: CalculatorViewModel,
     isRu: Boolean,
     visible: Boolean,
+    chipSlotIndex: Int,
     maxCardHeight: Dp,
     onStartCustomization: () -> Unit
 ) {
-    AnimatedVisibility(visible = visible) {
+    val pivotX = when (chipSlotIndex) {
+        0 -> 0.16f
+        1 -> 0.50f
+        else -> 0.84f
+    }
+    val enterAnim = remember(chipSlotIndex) {
+        scaleIn(
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+            initialScale = 0.18f,
+            transformOrigin = TransformOrigin(pivotX, 0f)
+        ) + expandVertically(
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+            expandFrom = Alignment.Top
+        ) + fadeIn(
+            animationSpec = tween(durationMillis = 170)
+        )
+    }
+
+    val exitAnim = remember(chipSlotIndex) {
+        scaleOut(
+            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+            targetScale = 0.18f,
+            transformOrigin = TransformOrigin(pivotX, 0f)
+        ) + shrinkVertically(
+            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+            shrinkTowards = Alignment.Top
+        ) + fadeOut(
+            animationSpec = tween(durationMillis = 150)
+        )
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = enterAnim,
+        exit = exitAnim
+    ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1234,7 +1322,6 @@ fun AnimatedKeypadGrid(
                         }
                     )
                 } else {
-                    // Empty slot (shown only in Customization mode so user can move buttons into it)
                     EmptyGridSlot(
                         shape = buttonShape,
                         visible = customMode && isCellVisibleInMode,
@@ -1616,24 +1703,34 @@ fun CalculatorKeyButton(
         )
 
         if (isCustomizationMode && enabled) {
-            Box(
+            // Red delete circle at the top-center of the button with a centered vector cross filling the circle
+            Canvas(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(3.dp)
-                    .size(18.dp)
+                    .align(Alignment.TopCenter)
+                    .padding(top = 3.dp)
+                    .size(20.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f))
-                    .border(1.dp, MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.6f), CircleShape)
-                    .clickable(
-                        onClick = onDelete
-                    ),
-                contentAlignment = Alignment.Center
+                    .background(Color(0xFFDC2626))
+                    .border(1.2.dp, Color.White.copy(alpha = 0.85f), CircleShape)
+                    .clickable(onClick = onDelete)
             ) {
-                Text(
-                    text = "×",
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
+                val cx = size.width * 0.5f
+                val cy = size.height * 0.5f
+                val arm = size.minDimension * 0.28f
+                val strokeW = 2.2.dp.toPx()
+                drawLine(
+                    color = Color.White,
+                    start = Offset(cx - arm, cy - arm),
+                    end = Offset(cx + arm, cy + arm),
+                    strokeWidth = strokeW,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = Color.White,
+                    start = Offset(cx + arm, cy - arm),
+                    end = Offset(cx - arm, cy + arm),
+                    strokeWidth = strokeW,
+                    cap = StrokeCap.Round
                 )
             }
         }
