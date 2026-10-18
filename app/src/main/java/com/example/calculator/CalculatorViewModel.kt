@@ -38,22 +38,12 @@ class CalculatorViewModel : ViewModel() {
         const val GRID_COLS = 5
         const val GRID_SIZE = GRID_ROWS * GRID_COLS
 
-        // Default 6x5 grid:
-        // Row 0 (top scientific row): DEG, sin, cos, tan, ln
-        // Col 0 (left scientific col, rows 1..5): sqrt, pow, log, fact, pi
-        // Rows 1..5, Cols 1..4 (main 5x4 keypad)
         val DEFAULT_GRID_IDS: List<String> = listOf(
-            // Row 0
             "DEG", "sin", "cos", "tan", "ln",
-            // Row 1
             "sqrt", "AC", "paren", "percent", "div",
-            // Row 2
             "pow", "7", "8", "9", "mul",
-            // Row 3
             "log", "4", "5", "6", "sub",
-            // Row 4
             "fact", "1", "2", "3", "add",
-            // Row 5
             "pi", "00", "0", "dot", "eq"
         )
 
@@ -73,7 +63,7 @@ class CalculatorViewModel : ViewModel() {
     var isError by mutableStateOf(false)
         private set
 
-    var themeMode by mutableStateOf(ThemeMode.SYSTEM)
+    var themeMode by mutableStateOf(ThemeMode.DARK)
         private set
 
     var themePalette by mutableStateOf(ThemePalette.OCEAN)
@@ -143,7 +133,7 @@ class CalculatorViewModel : ViewModel() {
     ) {
         if (settingsLoaded) return
         settingsLoaded = true
-        themeMode = savedThemeMode
+        themeMode = if (savedThemeMode == ThemeMode.LIGHT) ThemeMode.LIGHT else ThemeMode.DARK
         themePalette = savedPalette
         buttonShapeMode = savedShape
         language = savedLang
@@ -256,13 +246,6 @@ class CalculatorViewModel : ViewModel() {
         selectedGridIndex = null
     }
 
-    /**
-     * Computes the active starting row (0..5) and starting column (0..4) for the current mode.
-     * In Standard mode, base start is (row = 1, col = 1).
-     * In Scientific mode, base start is (row = 0, col = 0).
-     * If the top row(s) or left column(s) have no buttons in the current mode,
-     * the starting row/column advances so the remaining buttons expand to fill the interface.
-     */
     fun computeActiveGridBounds(forScientificMode: Boolean = isScientificMode): Pair<Int, Int> {
         var startRow = if (forScientificMode) 0 else 1
         var startCol = if (forScientificMode) 0 else 1
@@ -320,11 +303,11 @@ class CalculatorViewModel : ViewModel() {
     }
 
     fun cycleThemeMode() {
-        themeMode = when (themeMode) {
-            ThemeMode.SYSTEM -> ThemeMode.DARK
-            ThemeMode.DARK -> ThemeMode.LIGHT
-            ThemeMode.LIGHT -> ThemeMode.SYSTEM
-        }
+        toggleThemeMode()
+    }
+
+    fun toggleThemeMode() {
+        themeMode = if (themeMode == ThemeMode.LIGHT) ThemeMode.DARK else ThemeMode.LIGHT
     }
 
     fun updateThemeMode(mode: ThemeMode) {
@@ -343,6 +326,10 @@ class CalculatorViewModel : ViewModel() {
         language = lang
     }
 
+    fun toggleLanguage() {
+        language = if (language == AppLanguage.RU) AppLanguage.EN else AppLanguage.RU
+    }
+
     fun updateAutoScientificOnLandscape(enabled: Boolean) {
         autoScientificOnLandscape = enabled
         if (enabled) {
@@ -352,6 +339,10 @@ class CalculatorViewModel : ViewModel() {
                 isScientificMode = portraitScientificMode
             }
         }
+    }
+
+    fun toggleAutoScientificOnLandscape() {
+        updateAutoScientificOnLandscape(!autoScientificOnLandscape)
     }
 
     fun toggleScientificMode() {

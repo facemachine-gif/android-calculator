@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -19,13 +20,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -64,8 +67,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 private const val PREFS_NAME = "calculator_user_prefs"
 private const val KEY_THEME_MODE = "theme_mode"
@@ -91,8 +96,8 @@ class MainActivity : ComponentActivity() {
             // Load persisted settings synchronously before first composition
             remember(vm, prefs) {
                 val savedMode = runCatching {
-                    ThemeMode.valueOf(prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name)
-                }.getOrDefault(ThemeMode.SYSTEM)
+                    ThemeMode.valueOf(prefs.getString(KEY_THEME_MODE, ThemeMode.DARK.name) ?: ThemeMode.DARK.name)
+                }.getOrDefault(ThemeMode.DARK)
 
                 val savedPalette = runCatching {
                     ThemePalette.valueOf(prefs.getString(KEY_THEME_PALETTE, ThemePalette.OCEAN.name) ?: ThemePalette.OCEAN.name)
@@ -147,12 +152,7 @@ class MainActivity : ComponentActivity() {
                     .apply()
             }
 
-            val systemDark = isSystemInDarkTheme()
-            val isDark = when (vm.themeMode) {
-                ThemeMode.SYSTEM -> systemDark
-                ThemeMode.DARK -> true
-                ThemeMode.LIGHT -> false
-            }
+            val isDark = vm.themeMode != ThemeMode.LIGHT
             CalculatorAppTheme(
                 darkTheme = isDark,
                 palette = vm.themePalette
@@ -464,7 +464,8 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
 
                 CustomizationBanner(
                     vm = vm,
-                    isRu = isRu
+                    isRu = isRu,
+                    chipSlotIndex = settingsChipIndex
                 )
 
                 HistoryDropdownPanel(
@@ -482,9 +483,10 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                 SettingsDropdownPanel(
                     vm = vm,
                     isRu = isRu,
+                    isDarkTheme = isDarkTheme,
                     visible = showSettings && !vm.isCustomizationMode,
                     chipSlotIndex = settingsChipIndex,
-                    maxCardHeight = 290.dp,
+                    maxCardHeight = 250.dp,
                     onStartCustomization = {
                         showSettings = false
                         showHistory = false
@@ -542,7 +544,8 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
 
                     CustomizationBanner(
                         vm = vm,
-                        isRu = isRu
+                        isRu = isRu,
+                        chipSlotIndex = settingsChipIndex
                     )
 
                     HistoryDropdownPanel(
@@ -560,6 +563,7 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                     SettingsDropdownPanel(
                         vm = vm,
                         isRu = isRu,
+                        isDarkTheme = isDarkTheme,
                         visible = showSettings && !vm.isCustomizationMode,
                         chipSlotIndex = settingsChipIndex,
                         maxCardHeight = screenH * 0.78f,
@@ -766,9 +770,46 @@ fun CalculatorTopBar(
 @Composable
 fun CustomizationBanner(
     vm: CalculatorViewModel,
-    isRu: Boolean
+    isRu: Boolean,
+    chipSlotIndex: Int
 ) {
-    AnimatedVisibility(visible = vm.isCustomizationMode) {
+    val pivotX = when (chipSlotIndex) {
+        0 -> 0.16f
+        1 -> 0.50f
+        else -> 0.84f
+    }
+
+    val enterAnim = remember(chipSlotIndex) {
+        scaleIn(
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+            initialScale = 0.18f,
+            transformOrigin = TransformOrigin(pivotX, 0f)
+        ) + expandVertically(
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+            expandFrom = Alignment.Top
+        ) + fadeIn(
+            animationSpec = tween(durationMillis = 170)
+        )
+    }
+
+    val exitAnim = remember(chipSlotIndex) {
+        scaleOut(
+            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+            targetScale = 0.18f,
+            transformOrigin = TransformOrigin(pivotX, 0f)
+        ) + shrinkVertically(
+            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+            shrinkTowards = Alignment.Top
+        ) + fadeOut(
+            animationSpec = tween(durationMillis = 150)
+        )
+    }
+
+    AnimatedVisibility(
+        visible = vm.isCustomizationMode,
+        enter = enterAnim,
+        exit = exitAnim
+    ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -952,11 +993,13 @@ fun HistoryDropdownPanel(
 fun SettingsDropdownPanel(
     vm: CalculatorViewModel,
     isRu: Boolean,
+    isDarkTheme: Boolean,
     visible: Boolean,
     chipSlotIndex: Int,
     maxCardHeight: Dp,
     onStartCustomization: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     val pivotX = when (chipSlotIndex) {
         0 -> 0.16f
         1 -> 0.50f
@@ -1001,146 +1044,143 @@ fun SettingsDropdownPanel(
                 .padding(top = 6.dp),
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.86f)
             )
         ) {
             Column(
                 modifier = Modifier
-                    .padding(10.dp)
+                    .padding(horizontal = 10.dp, vertical = 9.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(7.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Compact Top Row: 3 Single-Button Animated Toggles [Theme Icon | Language RU/EN | Auto-Sci On/Off]
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 1. Theme toggle button (Sun / Crescent Moon animated icon, no text inside button)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = if (isRu) "Тема" else "Theme",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                        AnimatedThemeIconButton(
+                            isDark = isDarkTheme,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(32.dp),
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                vm.toggleThemeMode()
+                            }
+                        )
+                    }
+
+                    // 2. Language single-button animated toggle (RU <-> EN)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = if (isRu) "Язык" else "Language",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                        AnimatedSingleModeButton(
+                            currentText = if (isRu) "RU" else "EN",
+                            isHighlighted = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(32.dp),
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                vm.toggleLanguage()
+                            }
+                        )
+                    }
+
+                    // 3. Auto-scientific on rotate single-button animated toggle (Вкл <-> Выкл)
+                    Column(
+                        modifier = Modifier.weight(1.25f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = if (isRu) "Авто-инж." else "Auto-Sci",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                        val autoSciLabel = if (vm.autoScientificOnLandscape) {
+                            if (isRu) "Вкл" else "On"
+                        } else {
+                            if (isRu) "Выкл" else "Off"
+                        }
+                        AnimatedSingleModeButton(
+                            currentText = autoSciLabel,
+                            isHighlighted = vm.autoScientificOnLandscape,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(32.dp),
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                vm.toggleAutoScientificOnLandscape()
+                            }
+                        )
+                    }
+                }
+
+                // 2. Visual Color Palette Swatches (compact single row)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (isRu) "Язык" else "Language",
-                        fontSize = 12.sp,
+                        text = if (isRu) "Палитра" else "Palette",
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.width(120.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SettingsOptionChip(
-                            label = "RU",
-                            selected = vm.language == AppLanguage.RU,
-                            modifier = Modifier.weight(1f),
-                            onClick = { vm.updateLanguage(AppLanguage.RU) }
+                        val swatchColors = listOf(
+                            Triple(ThemePalette.OCEAN, Color(0xFF38BDF8), Color(0xFF0284C7)),
+                            Triple(ThemePalette.EMERALD, Color(0xFF34D399), Color(0xFF059669)),
+                            Triple(ThemePalette.AMETHYST, Color(0xFFC084FC), Color(0xFF7C3AED)),
+                            Triple(ThemePalette.AMBER, Color(0xFFFBBF24), Color(0xFFD97706)),
+                            Triple(ThemePalette.ROSE, Color(0xFFFB7185), Color(0xFFE11D48))
                         )
-                        SettingsOptionChip(
-                            label = "EN",
-                            selected = vm.language == AppLanguage.EN,
-                            modifier = Modifier.weight(1f),
-                            onClick = { vm.updateLanguage(AppLanguage.EN) }
-                        )
+                        for ((palette, topCol, botCol) in swatchColors) {
+                            ColorPaletteSwatch(
+                                topColor = topCol,
+                                bottomColor = botCol,
+                                selected = vm.themePalette == palette,
+                                onClick = { vm.updateThemePalette(palette) }
+                            )
+                        }
                     }
                 }
 
+                // 3. Button Shape (Round / Rounded / Square)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (isRu) "Инж. режим при повороте" else "Auto-Sci on rotate",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.width(120.dp)
-                    ) {
-                        SettingsOptionChip(
-                            label = if (isRu) "Вкл" else "On",
-                            selected = vm.autoScientificOnLandscape,
-                            modifier = Modifier.weight(1f),
-                            onClick = { vm.updateAutoScientificOnLandscape(true) }
-                        )
-                        SettingsOptionChip(
-                            label = if (isRu) "Выкл" else "Off",
-                            selected = !vm.autoScientificOnLandscape,
-                            modifier = Modifier.weight(1f),
-                            onClick = { vm.updateAutoScientificOnLandscape(false) }
-                        )
-                    }
-                }
-
-                Text(
-                    text = if (isRu) "Режим темы" else "Theme Mode",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    val modes = if (isRu) {
-                        listOf(
-                            ThemeMode.SYSTEM to "Авто",
-                            ThemeMode.DARK to "Тёмная",
-                            ThemeMode.LIGHT to "Светлая"
-                        )
-                    } else {
-                        listOf(
-                            ThemeMode.SYSTEM to "Auto",
-                            ThemeMode.DARK to "Dark",
-                            ThemeMode.LIGHT to "Light"
-                        )
-                    }
-                    for ((mode, label) in modes) {
-                        SettingsOptionChip(
-                            label = label,
-                            selected = vm.themeMode == mode,
-                            modifier = Modifier.weight(1f),
-                            onClick = { vm.updateThemeMode(mode) }
-                        )
-                    }
-                }
-
-                Text(
-                    text = if (isRu) "Палитра темы" else "Theme Palette",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val swatchColors = listOf(
-                        Triple(ThemePalette.OCEAN, Color(0xFF38BDF8), Color(0xFF0284C7)),
-                        Triple(ThemePalette.EMERALD, Color(0xFF34D399), Color(0xFF059669)),
-                        Triple(ThemePalette.AMETHYST, Color(0xFFC084FC), Color(0xFF7C3AED)),
-                        Triple(ThemePalette.AMBER, Color(0xFFFBBF24), Color(0xFFD97706)),
-                        Triple(ThemePalette.ROSE, Color(0xFFFB7185), Color(0xFFE11D48))
-                    )
-                    for ((palette, topCol, botCol) in swatchColors) {
-                        ColorPaletteSwatch(
-                            topColor = topCol,
-                            bottomColor = botCol,
-                            selected = vm.themePalette == palette,
-                            onClick = { vm.updateThemePalette(palette) }
-                        )
-                    }
-                }
-
-                Text(
-                    text = if (isRu) "Форма кнопок" else "Button Shape",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val shapes = if (isRu) {
                         listOf(
@@ -1165,20 +1205,16 @@ fun SettingsDropdownPanel(
                     }
                 }
 
-                Text(
-                    text = if (isRu) "Кастомизация" else "Customization",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // 4. Customization Mode Entry & Reset
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     SettingsOptionChip(
-                        label = if (isRu) "✎ Настроить кнопки и плашки" else "✎ Customize layout",
+                        label = if (isRu) "✎ Кастомизация" else "✎ Customize",
                         selected = vm.isCustomizationMode,
-                        modifier = Modifier.weight(1.6f),
+                        modifier = Modifier.weight(1.5f),
                         onClick = onStartCustomization
                     )
                     SettingsOptionChip(
@@ -1188,6 +1224,186 @@ fun SettingsDropdownPanel(
                         onClick = { vm.resetCustomizations() }
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun AnimatedThemeIconButton(
+    isDark: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val darkProgress by animateFloatAsState(
+        targetValue = if (isDark) 1f else 0f,
+        animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing),
+        label = "themeIconProgress"
+    )
+
+    val bgColor = lerp(
+        Color(0xFFFFF7ED),
+        Color(0xFF1E293B),
+        darkProgress
+    )
+    val borderColor = lerp(
+        Color(0xFFF59E0B).copy(alpha = 0.65f),
+        Color(0xFF38BDF8).copy(alpha = 0.65f),
+        darkProgress
+    )
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(bgColor)
+            .border(1.2.dp, borderColor, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(
+            modifier = Modifier
+                .size(20.dp)
+                .graphicsLayer {
+                    rotationZ = darkProgress * 180f
+                }
+        ) {
+            val cx = size.width * 0.5f
+            val cy = size.height * 0.5f
+            val r = size.minDimension * 0.28f
+
+            val orbColor = lerp(
+                Color(0xFFF59E0B), // Golden Sun
+                Color(0xFF7DD3FC), // Icy Crescent Moon
+                darkProgress
+            )
+
+            // Sun rays (visible when transitioning towards Light mode)
+            val rayFactor = (1f - darkProgress).coerceIn(0f, 1f)
+            if (rayFactor > 0.04f) {
+                val innerR = r * 1.32f
+                val outerR = r * (1.32f + 0.52f * rayFactor)
+                for (i in 0 until 8) {
+                    val angle = i * (Math.PI / 4.0)
+                    val cosA = cos(angle).toFloat()
+                    val sinA = sin(angle).toFloat()
+                    drawLine(
+                        color = orbColor.copy(alpha = rayFactor),
+                        start = Offset(cx + cosA * innerR, cy + sinA * innerR),
+                        end = Offset(cx + cosA * outerR, cy + sinA * outerR),
+                        strokeWidth = 1.6.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+
+            // Main Sun / Moon body
+            drawCircle(
+                color = orbColor,
+                radius = r * (1f + 0.12f * darkProgress),
+                center = Offset(cx, cy)
+            )
+
+            // Crescent cutout circle (slides in as darkProgress approaches 1f)
+            if (darkProgress > 0.04f) {
+                val maskOffset = (1f - darkProgress) * r * 1.4f
+                drawCircle(
+                    color = bgColor,
+                    radius = r * 0.92f,
+                    center = Offset(
+                        cx + r * 0.44f + maskOffset,
+                        cy - r * 0.36f - maskOffset
+                    )
+                )
+
+                // Tiny stars in Dark mode
+                drawCircle(
+                    color = Color(0xFFE0F2FE).copy(alpha = darkProgress),
+                    radius = 1.1.dp.toPx(),
+                    center = Offset(cx - r * 1.15f, cy - r * 0.75f)
+                )
+                drawCircle(
+                    color = Color(0xFFBAE6FD).copy(alpha = darkProgress * 0.85f),
+                    radius = 0.9.dp.toPx(),
+                    center = Offset(cx - r * 0.75f, cy + r * 1.05f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AnimatedSingleModeButton(
+    currentText: String,
+    isHighlighted: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val highlightProgress by animateFloatAsState(
+        targetValue = if (isHighlighted) 1f else 0f,
+        animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+        label = "modeBtnHighlight"
+    )
+
+    val bg = lerp(
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.68f),
+        MaterialTheme.colorScheme.primaryContainer,
+        highlightProgress
+    )
+    val fg = lerp(
+        MaterialTheme.colorScheme.onSurface,
+        MaterialTheme.colorScheme.onPrimaryContainer,
+        highlightProgress
+    )
+    val borderCol = lerp(
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.30f),
+        MaterialTheme.colorScheme.primary,
+        highlightProgress
+    )
+    val dotColor = lerp(
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+        MaterialTheme.colorScheme.primary,
+        highlightProgress
+    )
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .border(1.2.dp, borderCol, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(dotColor)
+            )
+            AnimatedContent(
+                targetState = currentText,
+                transitionSpec = {
+                    (slideInVertically(animationSpec = tween(200)) { h -> h / 2 } +
+                            fadeIn(animationSpec = tween(200)) +
+                            scaleIn(initialScale = 0.85f, animationSpec = tween(200)))
+                        .togetherWith(
+                            slideOutVertically(animationSpec = tween(160)) { h -> -h / 2 } +
+                                    fadeOut(animationSpec = tween(150))
+                        )
+                },
+                label = "singleModeTextAnim"
+            ) { label ->
+                Text(
+                    text = label,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = fg,
+                    maxLines = 1
+                )
             }
         }
     }
@@ -1480,7 +1696,7 @@ fun ColorPaletteSwatch(
                 scaleX = scale
                 scaleY = scale
             }
-            .size(34.dp)
+            .size(30.dp)
             .clip(CircleShape)
             .background(
                 brush = Brush.linearGradient(
@@ -1490,7 +1706,7 @@ fun ColorPaletteSwatch(
                 )
             )
             .border(
-                width = if (selected) 2.5.dp else 1.dp,
+                width = if (selected) 2.2.dp else 1.dp,
                 color = if (selected) MaterialTheme.colorScheme.onSurface else Color.White.copy(alpha = 0.4f),
                 shape = CircleShape
             )
@@ -1501,7 +1717,7 @@ fun ColorPaletteSwatch(
             Text(
                 text = "✓",
                 color = Color.White,
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -1588,7 +1804,6 @@ fun CalculatorKeyButton(
         label = "buttonScale"
     )
 
-    // Gentle floating bobbing when button is lifted and waiting to be swapped
     val infiniteTransition = rememberInfiniteTransition(label = "hoverFloat")
     val hoverBobDp by infiniteTransition.animateFloat(
         initialValue = -1.8f,
@@ -1646,7 +1861,6 @@ fun CalculatorKeyButton(
     val topRimBase = if (isDarkTheme) Color.White.copy(alpha = 0.34f) else Color.White.copy(alpha = 0.85f)
     val bottomRimBase = if (isDarkTheme) Color.Black.copy(alpha = 0.60f) else Color(0xFF1E293B).copy(alpha = 0.24f)
 
-    // Outer Box is NOT clipped to shape so the top-right delete badge is never cut off even on circular buttons
     Box(
         modifier = modifier
             .graphicsLayer {
@@ -1669,7 +1883,6 @@ fun CalculatorKeyButton(
                     radius = baseShadowRadius
                 )
 
-                // Deep diffused floating shadow when button is lifted ("floating in air")
                 val liftedShadowRadius = size.maxDimension * 0.76f
                 val liftedShadowCenter = Offset(btnCenter.x, btnCenter.y + 10.dp.toPx())
                 val liftedShadowBrush = Brush.radialGradient(
@@ -1766,7 +1979,6 @@ fun CalculatorKeyButton(
                 }
             }
     ) {
-        // Clipped button surface for touch & label
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1789,7 +2001,6 @@ fun CalculatorKeyButton(
             )
         }
 
-        // Stylized ruby-glass delete badge in the top-right corner, independent of the button's clip shape
         if (isCustomizationMode && enabled) {
             Canvas(
                 modifier = Modifier
@@ -1802,14 +2013,12 @@ fun CalculatorKeyButton(
                 val radius = size.minDimension * 0.5f
                 val badgeCenter = Offset(size.width * 0.5f, size.height * 0.5f)
 
-                // Soft outer depth shadow
                 drawCircle(
                     color = Color(0xFF2A0410).copy(alpha = 0.45f),
                     radius = radius,
                     center = badgeCenter
                 )
 
-                // Translucent 3D ruby-crimson gradient fill (not harsh flat red)
                 drawCircle(
                     brush = Brush.verticalGradient(
                         colors = listOf(
@@ -1822,7 +2031,6 @@ fun CalculatorKeyButton(
                     center = badgeCenter
                 )
 
-                // Subtle top specular highlight for glass feel
                 drawCircle(
                     brush = Brush.verticalGradient(
                         colors = listOf(
@@ -1836,7 +2044,6 @@ fun CalculatorKeyButton(
                     center = badgeCenter
                 )
 
-                // Soft metallic-rose 3D border rim
                 drawCircle(
                     brush = Brush.linearGradient(
                         colors = listOf(
@@ -1851,7 +2058,6 @@ fun CalculatorKeyButton(
                     style = Stroke(width = 1.1.dp.toPx())
                 )
 
-                // Centered crisp vector cross
                 val arm = size.minDimension * 0.25f
                 val strokeW = 1.8.dp.toPx()
                 val crossColor = Color(0xFFFFF0F3)
