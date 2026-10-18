@@ -7,7 +7,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -58,6 +62,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -603,6 +608,17 @@ fun CalculatorTopBar(
     val haptic = LocalHapticFeedback.current
     val customMode = vm.isCustomizationMode
 
+    val infiniteTransition = rememberInfiniteTransition(label = "topBarFloat")
+    val floatBob by infiniteTransition.animateFloat(
+        initialValue = -1.5f,
+        targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 850, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "topBarBob"
+    )
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -610,18 +626,40 @@ fun CalculatorTopBar(
     ) {
         for ((index, item) in vm.topBarOrder.withIndex()) {
             val isSelectedForSwap = customMode && vm.selectedTopBarIndex == index
-            val borderModifier = if (customMode) {
-                Modifier.border(
-                    width = if (isSelectedForSwap) 2.dp else 1.dp,
-                    color = if (isSelectedForSwap)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                    shape = RoundedCornerShape(50)
+            val liftScale by animateFloatAsState(
+                targetValue = if (isSelectedForSwap) 1.07f else 1f,
+                animationSpec = tween(durationMillis = 160),
+                label = "chipLiftScale"
+            )
+            val liftOffsetY by animateFloatAsState(
+                targetValue = if (isSelectedForSwap) -4f else 0f,
+                animationSpec = tween(durationMillis = 160),
+                label = "chipLiftY"
+            )
+
+            val chipModifier = Modifier
+                .weight(1f)
+                .zIndex(if (isSelectedForSwap) 5f else 0f)
+                .graphicsLayer {
+                    scaleX = liftScale
+                    scaleY = liftScale
+                    translationY = (liftOffsetY + if (isSelectedForSwap) floatBob else 0f).dp.toPx()
+                    shadowElevation = if (isSelectedForSwap) 10.dp.toPx() else 0f
+                }
+                .then(
+                    if (customMode) {
+                        Modifier.border(
+                            width = if (isSelectedForSwap) 2.dp else 1.dp,
+                            color = if (isSelectedForSwap)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                            shape = RoundedCornerShape(50)
+                        )
+                    } else {
+                        Modifier
+                    }
                 )
-            } else {
-                Modifier
-            }
 
             when (item) {
                 TopBarItem.HISTORY -> {
@@ -634,9 +672,7 @@ fun CalculatorTopBar(
                                 onToggleHistory()
                             }
                         },
-                        modifier = Modifier
-                            .weight(1f)
-                            .then(borderModifier),
+                        modifier = chipModifier,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                     ) {
                         val prefix = if (customMode) "⇄ " else ""
@@ -665,9 +701,7 @@ fun CalculatorTopBar(
                                 vm.toggleScientificMode()
                             }
                         },
-                        modifier = Modifier
-                            .weight(1f)
-                            .then(borderModifier),
+                        modifier = chipModifier,
                         colors = ButtonDefaults.filledTonalButtonColors(
                             containerColor = if (vm.isScientificMode)
                                 MaterialTheme.colorScheme.primaryContainer
@@ -706,9 +740,7 @@ fun CalculatorTopBar(
                                 onToggleSettings()
                             }
                         },
-                        modifier = Modifier
-                            .weight(1f)
-                            .then(borderModifier),
+                        modifier = chipModifier,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                     ) {
                         val prefix = if (customMode) "⇄ " else ""
@@ -805,6 +837,7 @@ fun HistoryDropdownPanel(
         1 -> 0.50f
         else -> 0.84f
     }
+
     val enterAnim = remember(chipSlotIndex) {
         scaleIn(
             animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
@@ -929,6 +962,7 @@ fun SettingsDropdownPanel(
         1 -> 0.50f
         else -> 0.84f
     }
+
     val enterAnim = remember(chipSlotIndex) {
         scaleIn(
             animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
@@ -976,7 +1010,6 @@ fun SettingsDropdownPanel(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                // 1. Language (RU / EN)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1007,7 +1040,6 @@ fun SettingsDropdownPanel(
                     }
                 }
 
-                // 2. Auto-switch to scientific mode on screen rotation
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1039,7 +1071,6 @@ fun SettingsDropdownPanel(
                     }
                 }
 
-                // 3. Theme Mode
                 Text(
                     text = if (isRu) "Режим темы" else "Theme Mode",
                     fontSize = 12.sp,
@@ -1073,7 +1104,6 @@ fun SettingsDropdownPanel(
                     }
                 }
 
-                // 4. Visual Color Palette Swatches
                 Text(
                     text = if (isRu) "Палитра темы" else "Theme Palette",
                     fontSize = 12.sp,
@@ -1102,7 +1132,6 @@ fun SettingsDropdownPanel(
                     }
                 }
 
-                // 5. Button Shape
                 Text(
                     text = if (isRu) "Форма кнопок" else "Button Shape",
                     fontSize = 12.sp,
@@ -1136,7 +1165,6 @@ fun SettingsDropdownPanel(
                     }
                 }
 
-                // 6. Customization Mode Entry & Reset
                 Text(
                     text = if (isRu) "Кастомизация" else "Customization",
                     fontSize = 12.sp,
@@ -1378,15 +1406,18 @@ fun AnimatedKeypadGrid(
                 if (visibility > 0.005f) {
                     val x = stepX * (c.toFloat() - startC) + offsetInCellX
                     val y = stepY * (r.toFloat() - startR) + offsetInCellY
-                    if (visibility < 0.999f) {
+                    val isSelectedCell = customMode && selectedCell == cellIdx
+                    val z = if (isSelectedCell) 10f else 0f
+
+                    if (visibility < 0.999f || isSelectedCell) {
                         val s = 0.72f + 0.28f * visibility
-                        placeables[cellIdx].placeWithLayer(x.roundToInt(), y.roundToInt()) {
+                        placeables[cellIdx].placeWithLayer(x.roundToInt(), y.roundToInt(), zIndex = z) {
                             alpha = visibility
                             scaleX = s
                             scaleY = s
                         }
                     } else {
-                        placeables[cellIdx].place(x.roundToInt(), y.roundToInt())
+                        placeables[cellIdx].place(x.roundToInt(), y.roundToInt(), zIndex = 0f)
                     }
                 }
             }
@@ -1539,13 +1570,34 @@ fun CalculatorKeyButton(
 
     val glowState = animateFloatAsState(
         targetValue = if (isPressed || isSelectedForSwap) 1f else 0f,
-        animationSpec = tween(durationMillis = if (isPressed) 65 else 240),
+        animationSpec = tween(durationMillis = if (isPressed) 65 else 220),
         label = "buttonGlow"
     )
+    val liftState = animateFloatAsState(
+        targetValue = if (isSelectedForSwap) 1f else 0f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "buttonLift"
+    )
     val scaleState = animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else if (isSelectedForSwap) 0.93f else 1f,
-        animationSpec = tween(durationMillis = 80),
+        targetValue = when {
+            isPressed -> 0.95f
+            isSelectedForSwap -> 1.08f
+            else -> 1f
+        },
+        animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
         label = "buttonScale"
+    )
+
+    // Gentle floating bobbing when button is lifted and waiting to be swapped
+    val infiniteTransition = rememberInfiniteTransition(label = "hoverFloat")
+    val hoverBobDp by infiniteTransition.animateFloat(
+        initialValue = -1.8f,
+        targetValue = 1.8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "hoverBob"
     )
 
     val (baseBgColor, contentColor) = when (spec.kind) {
@@ -1594,25 +1646,42 @@ fun CalculatorKeyButton(
     val topRimBase = if (isDarkTheme) Color.White.copy(alpha = 0.34f) else Color.White.copy(alpha = 0.85f)
     val bottomRimBase = if (isDarkTheme) Color.Black.copy(alpha = 0.60f) else Color(0xFF1E293B).copy(alpha = 0.24f)
 
+    // Outer Box is NOT clipped to shape so the top-right delete badge is never cut off even on circular buttons
     Box(
         modifier = modifier
             .graphicsLayer {
                 val s = scaleState.value
+                val lift = liftState.value
                 scaleX = s
                 scaleY = s
+                translationY = (-5.5f * lift + if (isSelectedForSwap) hoverBobDp else 0f).dp.toPx()
             }
             .drawWithCache {
                 val btnCenter = Offset(size.width * 0.5f, size.height * 0.5f)
-                val shadowRadius = size.maxDimension * 0.58f
-                val shadowCenter = Offset(btnCenter.x, btnCenter.y + 3.dp.toPx())
-                val shadowBrush = Brush.radialGradient(
+                val baseShadowRadius = size.maxDimension * 0.58f
+                val baseShadowCenter = Offset(btnCenter.x, btnCenter.y + 3.dp.toPx())
+                val baseShadowBrush = Brush.radialGradient(
                     colors = listOf(
                         Color.Black.copy(alpha = if (isDarkTheme) 0.34f else 0.13f),
                         Color.Transparent
                     ),
-                    center = shadowCenter,
-                    radius = shadowRadius
+                    center = baseShadowCenter,
+                    radius = baseShadowRadius
                 )
+
+                // Deep diffused floating shadow when button is lifted ("floating in air")
+                val liftedShadowRadius = size.maxDimension * 0.76f
+                val liftedShadowCenter = Offset(btnCenter.x, btnCenter.y + 10.dp.toPx())
+                val liftedShadowBrush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.Black.copy(alpha = if (isDarkTheme) 0.58f else 0.28f),
+                        Color.Black.copy(alpha = if (isDarkTheme) 0.22f else 0.10f),
+                        Color.Transparent
+                    ),
+                    center = liftedShadowCenter,
+                    radius = liftedShadowRadius
+                )
+
                 val glowRadius = size.maxDimension * 0.72f
                 val outerGlowBrush = Brush.radialGradient(
                     colors = listOf(
@@ -1638,7 +1707,7 @@ fun CalculatorKeyButton(
                     end = Offset(size.width, size.height)
                 )
                 val glowBorderBrush = Brush.linearGradient(
-                    colors = listOf(glowColor.copy(alpha = 0.9f), glowColor.copy(alpha = 0.7f)),
+                    colors = listOf(glowColor.copy(alpha = 0.95f), glowColor.copy(alpha = 0.75f)),
                     start = Offset.Zero,
                     end = Offset(size.width, size.height)
                 )
@@ -1646,11 +1715,23 @@ fun CalculatorKeyButton(
 
                 onDrawBehind {
                     val gp = glowState.value
-                    drawCircle(
-                        brush = shadowBrush,
-                        radius = shadowRadius,
-                        center = shadowCenter
-                    )
+                    val lift = liftState.value
+
+                    if (lift > 0.01f) {
+                        drawCircle(
+                            brush = liftedShadowBrush,
+                            radius = liftedShadowRadius,
+                            center = liftedShadowCenter,
+                            alpha = lift
+                        )
+                    } else {
+                        drawCircle(
+                            brush = baseShadowBrush,
+                            radius = baseShadowRadius,
+                            center = baseShadowCenter
+                        )
+                    }
+
                     if (gp > 0.01f) {
                         drawCircle(
                             brush = outerGlowBrush,
@@ -1684,51 +1765,107 @@ fun CalculatorKeyButton(
                     }
                 }
             }
-            .clip(shape)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                enabled = enabled,
-                role = Role.Button,
-                onClick = onTap
-            ),
-        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = spec.label,
-            color = contentColor,
-            fontSize = fontSizeOverride,
-            fontWeight = if (spec.kind == CalcButtonKind.NUMBER) FontWeight.Normal else FontWeight.SemiBold,
-            maxLines = 1
-        )
+        // Clipped button surface for touch & label
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(shape)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    enabled = enabled,
+                    role = Role.Button,
+                    onClick = onTap
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = spec.label,
+                color = contentColor,
+                fontSize = fontSizeOverride,
+                fontWeight = if (spec.kind == CalcButtonKind.NUMBER) FontWeight.Normal else FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
 
+        // Stylized ruby-glass delete badge in the top-right corner, independent of the button's clip shape
         if (isCustomizationMode && enabled) {
-            // Red delete circle at the top-center of the button with a centered vector cross filling the circle
             Canvas(
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 3.dp)
-                    .size(20.dp)
+                    .align(Alignment.TopEnd)
+                    .padding(top = 1.dp, end = 1.dp)
+                    .size(16.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFDC2626))
-                    .border(1.2.dp, Color.White.copy(alpha = 0.85f), CircleShape)
                     .clickable(onClick = onDelete)
             ) {
-                val cx = size.width * 0.5f
-                val cy = size.height * 0.5f
-                val arm = size.minDimension * 0.28f
-                val strokeW = 2.2.dp.toPx()
+                val radius = size.minDimension * 0.5f
+                val badgeCenter = Offset(size.width * 0.5f, size.height * 0.5f)
+
+                // Soft outer depth shadow
+                drawCircle(
+                    color = Color(0xFF2A0410).copy(alpha = 0.45f),
+                    radius = radius,
+                    center = badgeCenter
+                )
+
+                // Translucent 3D ruby-crimson gradient fill (not harsh flat red)
+                drawCircle(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFFD6335C).copy(alpha = 0.92f),
+                            Color(0xFF9E1B3E).copy(alpha = 0.95f),
+                            Color(0xFF6E0F29).copy(alpha = 0.96f)
+                        )
+                    ),
+                    radius = radius - 0.5.dp.toPx(),
+                    center = badgeCenter
+                )
+
+                // Subtle top specular highlight for glass feel
+                drawCircle(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.35f),
+                            Color.Transparent
+                        ),
+                        startY = 0f,
+                        endY = size.height * 0.55f
+                    ),
+                    radius = radius - 1.dp.toPx(),
+                    center = badgeCenter
+                )
+
+                // Soft metallic-rose 3D border rim
+                drawCircle(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFFFFD1DC).copy(alpha = 0.80f),
+                            Color(0xFF4A081C).copy(alpha = 0.75f)
+                        ),
+                        start = Offset.Zero,
+                        end = Offset(size.width, size.height)
+                    ),
+                    radius = radius - 0.6.dp.toPx(),
+                    center = badgeCenter,
+                    style = Stroke(width = 1.1.dp.toPx())
+                )
+
+                // Centered crisp vector cross
+                val arm = size.minDimension * 0.25f
+                val strokeW = 1.8.dp.toPx()
+                val crossColor = Color(0xFFFFF0F3)
                 drawLine(
-                    color = Color.White,
-                    start = Offset(cx - arm, cy - arm),
-                    end = Offset(cx + arm, cy + arm),
+                    color = crossColor,
+                    start = Offset(badgeCenter.x - arm, badgeCenter.y - arm),
+                    end = Offset(badgeCenter.x + arm, badgeCenter.y + arm),
                     strokeWidth = strokeW,
                     cap = StrokeCap.Round
                 )
                 drawLine(
-                    color = Color.White,
-                    start = Offset(cx + arm, cy - arm),
-                    end = Offset(cx - arm, cy + arm),
+                    color = crossColor,
+                    start = Offset(badgeCenter.x + arm, badgeCenter.y - arm),
+                    end = Offset(badgeCenter.x - arm, badgeCenter.y + arm),
                     strokeWidth = strokeW,
                     cap = StrokeCap.Round
                 )
