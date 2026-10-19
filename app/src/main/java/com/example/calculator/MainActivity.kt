@@ -1,10 +1,21 @@
 package com.example.calculator
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.graphics.Movie
+import android.graphics.Paint
+import android.graphics.RectF
+import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.View
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -65,9 +76,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.concurrent.Executors
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -81,6 +99,10 @@ private const val KEY_DEGREE_MODE = "degree_mode"
 private const val KEY_AUTO_SCI_LANDSCAPE = "auto_sci_landscape"
 private const val KEY_TOP_BAR_ORDER = "top_bar_order"
 private const val KEY_GRID_LAYOUT = "grid_layout_v1"
+private const val KEY_UI_ALPHA = "ui_alpha"
+private const val KEY_LANDSCAPE_BG_MODE = "landscape_bg_mode"
+private const val KEY_HAS_CUSTOM_BG = "has_custom_bg"
+private const val CUSTOM_BG_FILENAME = "custom_background_media"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,6 +111,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: CalculatorViewModel = viewModel()
             val context = LocalContext.current
+            val scope = rememberCoroutineScope()
             val prefs = remember(context) {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             }
@@ -115,6 +138,12 @@ class MainActivity : ComponentActivity() {
                 val savedAutoSci = prefs.getBoolean(KEY_AUTO_SCI_LANDSCAPE, true)
                 val savedTopBar = vm.parseTopBarOrder(prefs.getString(KEY_TOP_BAR_ORDER, null))
                 val savedGrid = vm.parseGridLayout(prefs.getString(KEY_GRID_LAYOUT, null))
+                val savedAlpha = prefs.getFloat(KEY_UI_ALPHA, 0.72f)
+                val savedLandBg = runCatching {
+                    LandscapeBgMode.valueOf(prefs.getString(KEY_LANDSCAPE_BG_MODE, LandscapeBgMode.TRIPLE.name) ?: LandscapeBgMode.TRIPLE.name)
+                }.getOrDefault(LandscapeBgMode.TRIPLE)
+                val bgFileExists = File(context.filesDir, CUSTOM_BG_FILENAME).exists()
+                val savedHasBg = prefs.getBoolean(KEY_HAS_CUSTOM_BG, false) && bgFileExists
 
                 vm.loadSavedSettings(
                     savedThemeMode = savedMode,
@@ -124,7 +153,10 @@ class MainActivity : ComponentActivity() {
                     savedDegreeMode = savedDeg,
                     savedAutoSciOnLandscape = savedAutoSci,
                     savedTopBarOrder = savedTopBar,
-                    savedGridLayout = savedGrid
+                    savedGridLayout = savedGrid,
+                    savedUiAlpha = savedAlpha,
+                    savedLandscapeBgMode = savedLandBg,
+                    savedHasCustomBg = savedHasBg
                 )
                 true
             }
@@ -138,7 +170,10 @@ class MainActivity : ComponentActivity() {
                 vm.isDegreeMode,
                 vm.autoScientificOnLandscape,
                 vm.topBarOrder,
-                vm.gridLayout
+                vm.gridLayout,
+                vm.uiAlpha,
+                vm.landscapeBgMode,
+                vm.hasCustomBackground
             ) {
                 prefs.edit()
                     .putString(KEY_THEME_MODE, vm.themeMode.name)
@@ -149,7 +184,34 @@ class MainActivity : ComponentActivity() {
                     .putBoolean(KEY_AUTO_SCI_LANDSCAPE, vm.autoScientificOnLandscape)
                     .putString(KEY_TOP_BAR_ORDER, vm.serializeTopBarOrder())
                     .putString(KEY_GRID_LAYOUT, vm.serializeGridLayout())
+                    .putFloat(KEY_UI_ALPHA, vm.uiAlpha)
+                    .putString(KEY_LANDSCAPE_BG_MODE, vm.landscapeBgMode.name)
+                    .putBoolean(KEY_HAS_CUSTOM_BG, vm.hasCustomBackground)
                     .apply()
+            }
+
+            // System media picker for .png, .jpg, .jpeg, .gif
+            val mediaPickerLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.GetContent()
+            ) { uri: Uri? ->
+                if (uri != null) {
+                    scope.launch {
+                        val copied = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val targetFile = File(context.filesDir, CUSTOM_BG_FILENAME)
+                                context.contentResolver.openInputStream(uri)?.use { input ->
+                                    targetFile.outputStream().use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                targetFile.exists() && targetFile.length() > 0L
+                            }.getOrDefault(false)
+                        }
+                        if (copied) {
+                            vm.onCustomBackgroundSaved()
+                        }
+                    }
+                }
             }
 
             val isDark = vm.themeMode != ThemeMode.LIGHT
@@ -157,14 +219,349 @@ class MainActivity : ComponentActivity() {
                 darkTheme = isDark,
                 palette = vm.themePalette
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
                 ) {
-                    CalculatorScreen(vm = vm, isDarkTheme = isDark)
+                    // Full-screen hardware-accelerated background view for custom PNG / JPEG / animated GIF
+                    if (vm.hasCustomBackground) {
+                        AndroidView(
+                            factory = { ctx ->
+                                CalculatorBackgroundView(ctx).apply {
+                                    updateConfig(
+                                        file = File(ctx.filesDir, CUSTOM_BG_FILENAME),
+                                        mode = vm.landscapeBgMode,
+                                        reloadToken = vm.backgroundReloadToken
+                                    )
+                                }
+                            },
+                            update = { view ->
+                                view.updateConfig(
+                                    file = File(view.context.filesDir, CUSTOM_BG_FILENAME),
+                                    mode = vm.landscapeBgMode,
+                                    reloadToken = vm.backgroundReloadToken
+                                )
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        // Subtle readability scrim over custom wallpaper so display digits remain crisp
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    MaterialTheme.colorScheme.background.copy(
+                                        alpha = if (isDark) 0.28f else 0.22f
+                                    )
+                                )
+                        )
+                    }
+
+                    CalculatorScreen(
+                        vm = vm,
+                        isDarkTheme = isDark,
+                        onPickBackgroundMedia = { mediaPickerLauncher.launch("image/*") },
+                        onClearBackgroundMedia = {
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    runCatching { File(context.filesDir, CUSTOM_BG_FILENAME).delete() }
+                                }
+                                vm.onCustomBackgroundCleared()
+                            }
+                        }
+                    )
                 }
             }
         }
+    }
+}
+
+/**
+ * Hardware-accelerated View that renders static images (.png, .jpeg) and animated .gif files
+ * full-screen without triggering any Jetpack Compose recompositions.
+ */
+class CalculatorBackgroundView(context: Context) : View(context) {
+
+    private var currentToken: Int = -1
+    private var landscapeMode: LandscapeBgMode = LandscapeBgMode.TRIPLE
+
+    @Volatile
+    private var movie: Movie? = null
+    private var movieStart: Long = 0L
+
+    @Volatile
+    private var staticBitmap: Bitmap? = null
+
+    @Volatile
+    private var blurredBitmap: Bitmap? = null
+
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x33000000
+        strokeWidth = 2f
+    }
+    private val drawMatrix = Matrix()
+    private val executor = Executors.newSingleThreadExecutor()
+
+    fun updateConfig(file: File, mode: LandscapeBgMode, reloadToken: Int) {
+        var needsRedraw = false
+        if (this.landscapeMode != mode) {
+            this.landscapeMode = mode
+            needsRedraw = true
+        }
+        if (this.currentToken != reloadToken) {
+            this.currentToken = reloadToken
+            loadMediaAsync(file)
+        } else if (needsRedraw) {
+            invalidate()
+        }
+    }
+
+    private fun loadMediaAsync(file: File) {
+        executor.execute {
+            if (!file.exists() || file.length() == 0L) {
+                movie = null
+                staticBitmap = null
+                blurredBitmap = null
+                postInvalidate()
+                return@execute
+            }
+
+            try {
+                val isGif = file.inputStream().use { ins ->
+                    val header = ByteArray(6)
+                    val read = ins.read(header)
+                    read == 6 && (String(header, Charsets.US_ASCII).startsWith("GIF87a") ||
+                            String(header, Charsets.US_ASCII).startsWith("GIF89a"))
+                }
+
+                var loadedMovie: Movie? = null
+                if (isGif && file.length() <= 35L * 1024L * 1024L) {
+                    val bytes = file.readBytes()
+                    val m = Movie.decodeByteArray(bytes, 0, bytes.size)
+                    if (m != null && m.width() > 0 && m.height() > 0 && m.duration() > 0) {
+                        loadedMovie = m
+                    }
+                }
+
+                // Always decode a downsampled static bitmap (used for static PNG/JPEG and for Blur Wings background)
+                val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(file.absolutePath, boundsOpts)
+                var sampleSize = 1
+                val maxDim = max(boundsOpts.outWidth, boundsOpts.outHeight)
+                while (maxDim / sampleSize > 1920) {
+                    sampleSize *= 2
+                }
+                val decodeOpts = BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                val bmp = BitmapFactory.decodeFile(file.absolutePath, decodeOpts)
+                val blurBmp = if (bmp != null) createFastBlurredBitmap(bmp) else null
+
+                movie = loadedMovie
+                movieStart = 0L
+                staticBitmap = bmp
+                blurredBitmap = blurBmp
+                postInvalidate()
+            } catch (_: Exception) {
+                // Keep previous valid state or clear safely
+            }
+        }
+    }
+
+    private fun createFastBlurredBitmap(src: Bitmap): Bitmap? {
+        return try {
+            val smallW = 64
+            val smallH = max(1, (src.height.toFloat() / src.width.toFloat() * smallW).roundToInt()).coerceAtMost(128)
+            val small = Bitmap.createScaledBitmap(src, smallW, smallH, true)
+            val pixels = IntArray(smallW * smallH)
+            val temp = IntArray(smallW * smallH)
+            small.getPixels(pixels, 0, smallW, 0, 0, smallW, smallH)
+
+            // 2-pass fast box blur on downscaled 64px bitmap for smooth ambient wings
+            repeat(2) {
+                for (y in 1 until smallH - 1) {
+                    for (x in 1 until smallW - 1) {
+                        var r = 0
+                        var g = 0
+                        var b = 0
+                        for (dy in -1..1) {
+                            for (dx in -1..1) {
+                                val c = pixels[(y + dy) * smallW + (x + dx)]
+                                r += (c shr 16) and 0xFF
+                                g += (c shr 8) and 0xFF
+                                b += c and 0xFF
+                            }
+                        }
+                        temp[y * smallW + x] = (0xFF shl 24) or ((r / 9) shl 16) or ((g / 9) shl 8) or (b / 9)
+                    }
+                }
+                System.arraycopy(temp, 0, pixels, 0, pixels.size)
+            }
+            val out = Bitmap.createBitmap(smallW, smallH, Bitmap.Config.ARGB_8888)
+            out.setPixels(pixels, 0, smallW, 0, 0, smallW, smallH)
+            out
+        } catch (_: Exception) {
+            src
+        }
+    }
+
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (w <= 0f || h <= 0f) return
+
+        val isLandscape = w > h
+        val activeMovie = movie
+        val activeBmp = staticBitmap
+
+        if (activeMovie != null && activeMovie.width() > 0 && activeMovie.height() > 0) {
+            val now = SystemClock.uptimeMillis()
+            if (movieStart == 0L) movieStart = now
+            val dur = activeMovie.duration().coerceAtLeast(1)
+            val relTime = ((now - movieStart) % dur).toInt()
+            activeMovie.setTime(relTime)
+
+            if (!isLandscape || landscapeMode == LandscapeBgMode.CROP) {
+                drawMovieCenterCrop(canvas, activeMovie, 0f, 0f, w, h)
+            } else if (landscapeMode == LandscapeBgMode.TRIPLE) {
+                val tileW = w / 3f
+                for (i in 0 until 3) {
+                    val left = i * tileW
+                    val right = left + tileW
+                    drawMovieCenterCrop(canvas, activeMovie, left, 0f, right, h)
+                    if (i > 0) {
+                        canvas.drawLine(left, 0f, left, h, dividerPaint)
+                    }
+                }
+            } else {
+                // BLUR_WINGS: blurred side wings + uncropped full-height center GIF
+                blurredBitmap?.let { drawBitmapCenterCrop(canvas, it, 0f, 0f, w, h) }
+                drawMovieFitCenter(canvas, activeMovie, 0f, 0f, w, h)
+            }
+
+            postInvalidateOnAnimation()
+        } else if (activeBmp != null && !activeBmp.isRecycled) {
+            if (!isLandscape || landscapeMode == LandscapeBgMode.CROP) {
+                drawBitmapCenterCrop(canvas, activeBmp, 0f, 0f, w, h)
+            } else if (landscapeMode == LandscapeBgMode.TRIPLE) {
+                val tileW = w / 3f
+                for (i in 0 until 3) {
+                    val left = i * tileW
+                    val right = left + tileW
+                    drawBitmapCenterCrop(canvas, activeBmp, left, 0f, right, h)
+                    if (i > 0) {
+                        canvas.drawLine(left, 0f, left, h, dividerPaint)
+                    }
+                }
+            } else {
+                // BLUR_WINGS: blurred side wings + uncropped full-height center image
+                (blurredBitmap ?: activeBmp).let { drawBitmapCenterCrop(canvas, it, 0f, 0f, w, h) }
+                drawBitmapFitCenter(canvas, activeBmp, 0f, 0f, w, h)
+            }
+        }
+    }
+
+    private fun drawMovieCenterCrop(
+        canvas: android.graphics.Canvas,
+        m: Movie,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float
+    ) {
+        val targetW = right - left
+        val targetH = bottom - top
+        val mw = m.width().toFloat()
+        val mh = m.height().toFloat()
+        val scale = max(targetW / mw, targetH / mh)
+        val dx = left + (targetW - mw * scale) * 0.5f
+        val dy = top + (targetH - mh * scale) * 0.5f
+
+        canvas.save()
+        canvas.clipRect(left, top, right, bottom)
+        canvas.translate(dx, dy)
+        canvas.scale(scale, scale)
+        m.draw(canvas, 0f, 0f)
+        canvas.restore()
+    }
+
+    private fun drawMovieFitCenter(
+        canvas: android.graphics.Canvas,
+        m: Movie,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float
+    ) {
+        val targetW = right - left
+        val targetH = bottom - top
+        val mw = m.width().toFloat()
+        val mh = m.height().toFloat()
+        val scale = min(targetW / mw, targetH / mh)
+        val dx = left + (targetW - mw * scale) * 0.5f
+        val dy = top + (targetH - mh * scale) * 0.5f
+
+        canvas.save()
+        canvas.clipRect(left, top, right, bottom)
+        canvas.translate(dx, dy)
+        canvas.scale(scale, scale)
+        m.draw(canvas, 0f, 0f)
+        canvas.restore()
+    }
+
+    private fun drawBitmapCenterCrop(
+        canvas: android.graphics.Canvas,
+        bmp: Bitmap,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float
+    ) {
+        val targetW = right - left
+        val targetH = bottom - top
+        val bw = bmp.width.toFloat()
+        val bh = bmp.height.toFloat()
+        val scale = max(targetW / bw, targetH / bh)
+        val dx = left + (targetW - bw * scale) * 0.5f
+        val dy = top + (targetH - bh * scale) * 0.5f
+
+        drawMatrix.reset()
+        drawMatrix.postScale(scale, scale)
+        drawMatrix.postTranslate(dx, dy)
+
+        canvas.save()
+        canvas.clipRect(left, top, right, bottom)
+        canvas.drawBitmap(bmp, drawMatrix, paint)
+        canvas.restore()
+    }
+
+    private fun drawBitmapFitCenter(
+        canvas: android.graphics.Canvas,
+        bmp: Bitmap,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float
+    ) {
+        val targetW = right - left
+        val targetH = bottom - top
+        val bw = bmp.width.toFloat()
+        val bh = bmp.height.toFloat()
+        val scale = min(targetW / bw, targetH / bh)
+        val dx = left + (targetW - bw * scale) * 0.5f
+        val dy = top + (targetH - bh * scale) * 0.5f
+
+        drawMatrix.reset()
+        drawMatrix.postScale(scale, scale)
+        drawMatrix.postTranslate(dx, dy)
+
+        canvas.save()
+        canvas.clipRect(RectF(dx, dy, dx + bw * scale, dy + bh * scale))
+        canvas.drawBitmap(bmp, drawMatrix, paint)
+        canvas.restore()
     }
 }
 
@@ -405,7 +802,12 @@ fun resolveButtonSpec(id: String, vm: CalculatorViewModel): CalcButtonSpec {
 }
 
 @Composable
-fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
+fun CalculatorScreen(
+    vm: CalculatorViewModel,
+    isDarkTheme: Boolean,
+    onPickBackgroundMedia: () -> Unit,
+    onClearBackgroundMedia: () -> Unit
+) {
     var showHistory by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     val isRu = vm.language == AppLanguage.RU
@@ -486,7 +888,9 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                     isDarkTheme = isDarkTheme,
                     visible = showSettings && !vm.isCustomizationMode,
                     chipSlotIndex = settingsChipIndex,
-                    maxCardHeight = 250.dp,
+                    maxCardHeight = 290.dp,
+                    onPickBackgroundMedia = onPickBackgroundMedia,
+                    onClearBackgroundMedia = onClearBackgroundMedia,
                     onStartCustomization = {
                         showSettings = false
                         showHistory = false
@@ -566,7 +970,9 @@ fun CalculatorScreen(vm: CalculatorViewModel, isDarkTheme: Boolean) {
                         isDarkTheme = isDarkTheme,
                         visible = showSettings && !vm.isCustomizationMode,
                         chipSlotIndex = settingsChipIndex,
-                        maxCardHeight = screenH * 0.78f,
+                        maxCardHeight = screenH * 0.82f,
+                        onPickBackgroundMedia = onPickBackgroundMedia,
+                        onClearBackgroundMedia = onClearBackgroundMedia,
                         onStartCustomization = {
                             showSettings = false
                             showHistory = false
@@ -611,6 +1017,7 @@ fun CalculatorTopBar(
 ) {
     val haptic = LocalHapticFeedback.current
     val customMode = vm.isCustomizationMode
+    val chipAlpha = vm.uiAlpha
 
     val infiniteTransition = rememberInfiniteTransition(label = "topBarFloat")
     val floatBob by infiniteTransition.animateFloat(
@@ -677,6 +1084,10 @@ fun CalculatorTopBar(
                             }
                         },
                         modifier = chipModifier,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = chipAlpha),
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                     ) {
                         val prefix = if (customMode) "⇄ " else ""
@@ -707,10 +1118,10 @@ fun CalculatorTopBar(
                         },
                         modifier = chipModifier,
                         colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = if (vm.isScientificMode)
+                            containerColor = (if (vm.isScientificMode)
                                 MaterialTheme.colorScheme.primaryContainer
                             else
-                                MaterialTheme.colorScheme.secondaryContainer,
+                                MaterialTheme.colorScheme.secondaryContainer).copy(alpha = chipAlpha),
                             contentColor = if (vm.isScientificMode)
                                 MaterialTheme.colorScheme.onPrimaryContainer
                             else
@@ -745,6 +1156,10 @@ fun CalculatorTopBar(
                             }
                         },
                         modifier = chipModifier,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = chipAlpha),
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                     ) {
                         val prefix = if (customMode) "⇄ " else ""
@@ -805,6 +1220,8 @@ fun CustomizationBanner(
         )
     }
 
+    val cardAlpha = (vm.uiAlpha + 0.16f).coerceIn(0.30f, 0.96f)
+
     AnimatedVisibility(
         visible = vm.isCustomizationMode,
         enter = enterAnim,
@@ -816,7 +1233,7 @@ fun CustomizationBanner(
                 .padding(top = 6.dp),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.90f)
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = cardAlpha)
             )
         ) {
             Column(
@@ -905,6 +1322,8 @@ fun HistoryDropdownPanel(
         )
     }
 
+    val cardAlpha = (vm.uiAlpha + 0.14f).coerceIn(0.28f, 0.95f)
+
     AnimatedVisibility(
         visible = visible,
         enter = enterAnim,
@@ -917,7 +1336,7 @@ fun HistoryDropdownPanel(
                 .padding(top = 6.dp),
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.80f)
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = cardAlpha)
             )
         ) {
             Column(modifier = Modifier.padding(10.dp)) {
@@ -997,6 +1416,8 @@ fun SettingsDropdownPanel(
     visible: Boolean,
     chipSlotIndex: Int,
     maxCardHeight: Dp,
+    onPickBackgroundMedia: () -> Unit,
+    onClearBackgroundMedia: () -> Unit,
     onStartCustomization: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
@@ -1032,6 +1453,8 @@ fun SettingsDropdownPanel(
         )
     }
 
+    val cardAlpha = (vm.uiAlpha + 0.16f).coerceIn(0.32f, 0.96f)
+
     AnimatedVisibility(
         visible = visible,
         enter = enterAnim,
@@ -1044,22 +1467,21 @@ fun SettingsDropdownPanel(
                 .padding(top = 6.dp),
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.86f)
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = cardAlpha)
             )
         ) {
             Column(
                 modifier = Modifier
                     .padding(horizontal = 10.dp, vertical = 9.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                // Compact Top Row: 3 Single-Button Animated Toggles [Theme Icon | Language RU/EN | Auto-Sci On/Off]
+                // 1. Compact Top Row: [Theme Icon | Language RU/EN | Auto-Sci On/Off]
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 1. Theme toggle button (Sun / Crescent Moon animated icon, no text inside button)
                     Column(
                         modifier = Modifier.weight(1f),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1084,7 +1506,6 @@ fun SettingsDropdownPanel(
                         )
                     }
 
-                    // 2. Language single-button animated toggle (RU <-> EN)
                     Column(
                         modifier = Modifier.weight(1f),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1110,7 +1531,6 @@ fun SettingsDropdownPanel(
                         )
                     }
 
-                    // 3. Auto-scientific on rotate single-button animated toggle (Вкл <-> Выкл)
                     Column(
                         modifier = Modifier.weight(1.25f),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1142,7 +1562,7 @@ fun SettingsDropdownPanel(
                     }
                 }
 
-                // 2. Visual Color Palette Swatches (compact single row)
+                // 2. Visual Color Palette Swatches
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1176,7 +1596,73 @@ fun SettingsDropdownPanel(
                     }
                 }
 
-                // 3. Button Shape (Round / Rounded / Square)
+                // 3. UI Elements Opacity / Transparency Slider
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = if (isRu)
+                            "Прозрачность: ${(vm.uiAlpha * 100).roundToInt()}%"
+                        else
+                            "Opacity: ${(vm.uiAlpha * 100).roundToInt()}%",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(118.dp)
+                    )
+                    Slider(
+                        value = vm.uiAlpha,
+                        onValueChange = { vm.updateUiAlpha(it) },
+                        valueRange = 0.15f..1.0f,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(26.dp)
+                    )
+                }
+
+                // 4. Custom Background Image / GIF & Landscape Rotation Mode
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SettingsOptionChip(
+                        label = if (isRu) "🖼 Фон (PNG/JPG/GIF)" else "🖼 BG (PNG/JPG/GIF)",
+                        selected = vm.hasCustomBackground,
+                        modifier = Modifier.weight(1.35f),
+                        onClick = onPickBackgroundMedia
+                    )
+
+                    val landModeLabel = when (vm.landscapeBgMode) {
+                        LandscapeBgMode.TRIPLE -> if (isRu) "Гориз: 3× Триптих" else "Land: 3× Tile"
+                        LandscapeBgMode.BLUR_WINGS -> if (isRu) "Гориз: Размытие" else "Land: Blur"
+                        LandscapeBgMode.CROP -> if (isRu) "Гориз: Заполн." else "Land: Crop"
+                    }
+                    AnimatedSingleModeButton(
+                        currentText = landModeLabel,
+                        isHighlighted = vm.hasCustomBackground,
+                        modifier = Modifier
+                            .weight(1.25f)
+                            .height(30.dp),
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            vm.toggleLandscapeBgMode()
+                        }
+                    )
+
+                    if (vm.hasCustomBackground) {
+                        SettingsOptionChip(
+                            label = "✕",
+                            selected = false,
+                            modifier = Modifier.width(34.dp),
+                            onClick = onClearBackgroundMedia
+                        )
+                    }
+                }
+
+                // 5. Button Shape (Round / Rounded / Square)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1205,7 +1691,7 @@ fun SettingsDropdownPanel(
                     }
                 }
 
-                // 4. Customization Mode Entry & Reset
+                // 6. Customization Mode Entry & Reset
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1272,12 +1758,11 @@ fun AnimatedThemeIconButton(
             val r = size.minDimension * 0.28f
 
             val orbColor = lerp(
-                Color(0xFFF59E0B), // Golden Sun
-                Color(0xFF7DD3FC), // Icy Crescent Moon
+                Color(0xFFF59E0B),
+                Color(0xFF7DD3FC),
                 darkProgress
             )
 
-            // Sun rays (visible when transitioning towards Light mode)
             val rayFactor = (1f - darkProgress).coerceIn(0f, 1f)
             if (rayFactor > 0.04f) {
                 val innerR = r * 1.32f
@@ -1296,14 +1781,12 @@ fun AnimatedThemeIconButton(
                 }
             }
 
-            // Main Sun / Moon body
             drawCircle(
                 color = orbColor,
                 radius = r * (1f + 0.12f * darkProgress),
                 center = Offset(cx, cy)
             )
 
-            // Crescent cutout circle (slides in as darkProgress approaches 1f)
             if (darkProgress > 0.04f) {
                 val maskOffset = (1f - darkProgress) * r * 1.4f
                 drawCircle(
@@ -1315,7 +1798,6 @@ fun AnimatedThemeIconButton(
                     )
                 )
 
-                // Tiny stars in Dark mode
                 drawCircle(
                     color = Color(0xFFE0F2FE).copy(alpha = darkProgress),
                     radius = 1.1.dp.toPx(),
@@ -1371,16 +1853,16 @@ fun AnimatedSingleModeButton(
             .background(bg)
             .border(1.2.dp, borderCol, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(6.dp)
+                    .size(5.dp)
                     .clip(CircleShape)
                     .background(dotColor)
             )
@@ -1399,10 +1881,11 @@ fun AnimatedSingleModeButton(
             ) { label ->
                 Text(
                     text = label,
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = fg,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -1511,6 +1994,7 @@ fun AnimatedKeypadGrid(
     val customMode = vm.isCustomizationMode
     val selectedCell = vm.selectedGridIndex
     val gridIds = vm.gridLayout
+    val uiAlpha = vm.uiAlpha
 
     val buttonShape: Shape = remember(shapeMode) {
         when (shapeMode) {
@@ -1548,6 +2032,7 @@ fun AnimatedKeypadGrid(
                         shape = buttonShape,
                         shapeMode = shapeMode,
                         isDarkTheme = isDarkTheme,
+                        uiAlpha = uiAlpha,
                         enabled = isCellVisibleInMode,
                         isCustomizationMode = customMode,
                         isSelectedForSwap = isSelected,
@@ -1773,6 +2258,7 @@ fun CalculatorKeyButton(
     shape: Shape,
     shapeMode: ButtonShapeMode,
     isDarkTheme: Boolean,
+    uiAlpha: Float = 0.72f,
     enabled: Boolean = true,
     isCustomizationMode: Boolean = false,
     isSelectedForSwap: Boolean = false,
@@ -1850,16 +2336,15 @@ fun CalculatorKeyButton(
         Color(0xFF0D2B6B)
     }
 
-    val topAlpha = if (isDarkTheme) 0.68f else 0.78f
-    val bottomAlpha = if (isDarkTheme) 0.46f else 0.56f
-    val topHighlightTint = if (isDarkTheme) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.55f)
-    val bottomShadeTint = if (isDarkTheme) Color.Black.copy(alpha = 0.35f) else Color(0xFF0F172A).copy(alpha = 0.14f)
+    val topHighlightTint = if (isDarkTheme) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.65f)
+    val bottomShadeTint = if (isDarkTheme) Color.Black.copy(alpha = 0.42f) else Color(0xFF0F172A).copy(alpha = 0.18f)
 
-    val topSurfaceColor = lerp(baseBgColor.copy(alpha = topAlpha), topHighlightTint, 0.22f)
-    val bottomSurfaceColor = lerp(baseBgColor.copy(alpha = bottomAlpha), bottomShadeTint, 0.25f)
+    // Base opaque surface colors cached in Brush; actual user uiAlpha is applied in onDrawBehind at 120 FPS
+    val topSurfaceColor = lerp(baseBgColor, topHighlightTint, 0.22f)
+    val bottomSurfaceColor = lerp(baseBgColor, bottomShadeTint, 0.28f)
 
-    val topRimBase = if (isDarkTheme) Color.White.copy(alpha = 0.34f) else Color.White.copy(alpha = 0.85f)
-    val bottomRimBase = if (isDarkTheme) Color.Black.copy(alpha = 0.60f) else Color(0xFF1E293B).copy(alpha = 0.24f)
+    val topRimBase = if (isDarkTheme) Color.White.copy(alpha = 0.42f) else Color.White.copy(alpha = 0.90f)
+    val bottomRimBase = if (isDarkTheme) Color.Black.copy(alpha = 0.65f) else Color(0xFF1E293B).copy(alpha = 0.28f)
 
     Box(
         modifier = modifier
@@ -1929,6 +2414,7 @@ fun CalculatorKeyButton(
                 onDrawBehind {
                     val gp = glowState.value
                     val lift = liftState.value
+                    val surfaceAlpha = uiAlpha.coerceIn(0.15f, 1.0f)
 
                     if (lift > 0.01f) {
                         drawCircle(
@@ -1941,7 +2427,8 @@ fun CalculatorKeyButton(
                         drawCircle(
                             brush = baseShadowBrush,
                             radius = baseShadowRadius,
-                            center = baseShadowCenter
+                            center = baseShadowCenter,
+                            alpha = surfaceAlpha
                         )
                     }
 
@@ -1955,7 +2442,8 @@ fun CalculatorKeyButton(
                     }
                     drawRoundRect(
                         brush = surfaceBrush,
-                        cornerRadius = cornerRadius
+                        cornerRadius = cornerRadius,
+                        alpha = surfaceAlpha
                     )
                     if (gp > 0.01f) {
                         drawRoundRect(
@@ -1966,7 +2454,8 @@ fun CalculatorKeyButton(
                     drawRoundRect(
                         brush = borderBrush,
                         cornerRadius = cornerRadius,
-                        style = borderStroke
+                        style = borderStroke,
+                        alpha = (surfaceAlpha + 0.15f).coerceAtMost(1f)
                     )
                     if (gp > 0.01f) {
                         drawRoundRect(

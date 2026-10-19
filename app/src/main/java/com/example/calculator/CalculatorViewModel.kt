@@ -31,6 +31,10 @@ enum class TopBarItem {
     HISTORY, MODE, SETTINGS
 }
 
+enum class LandscapeBgMode {
+    TRIPLE, BLUR_WINGS, CROP
+}
+
 class CalculatorViewModel : ViewModel() {
 
     companion object {
@@ -73,6 +77,18 @@ class CalculatorViewModel : ViewModel() {
         private set
 
     var language by mutableStateOf(AppLanguage.RU)
+        private set
+
+    var uiAlpha by mutableStateOf(0.72f)
+        private set
+
+    var hasCustomBackground by mutableStateOf(false)
+        private set
+
+    var backgroundReloadToken by mutableStateOf(0)
+        private set
+
+    var landscapeBgMode by mutableStateOf(LandscapeBgMode.TRIPLE)
         private set
 
     var isScientificMode by mutableStateOf(false)
@@ -129,7 +145,10 @@ class CalculatorViewModel : ViewModel() {
         savedDegreeMode: Boolean,
         savedAutoSciOnLandscape: Boolean,
         savedTopBarOrder: List<TopBarItem>? = null,
-        savedGridLayout: List<String?>? = null
+        savedGridLayout: List<String?>? = null,
+        savedUiAlpha: Float = 0.72f,
+        savedLandscapeBgMode: LandscapeBgMode = LandscapeBgMode.TRIPLE,
+        savedHasCustomBg: Boolean = false
     ) {
         if (settingsLoaded) return
         settingsLoaded = true
@@ -139,12 +158,37 @@ class CalculatorViewModel : ViewModel() {
         language = savedLang
         isDegreeMode = savedDegreeMode
         autoScientificOnLandscape = savedAutoSciOnLandscape
+        uiAlpha = savedUiAlpha.coerceIn(0.15f, 1.0f)
+        landscapeBgMode = savedLandscapeBgMode
+        hasCustomBackground = savedHasCustomBg
 
         if (savedTopBarOrder != null && savedTopBarOrder.size == 3 && savedTopBarOrder.toSet() == DEFAULT_TOP_BAR.toSet()) {
             topBarOrder = savedTopBarOrder
         }
         if (savedGridLayout != null && savedGridLayout.size == GRID_SIZE) {
             gridLayout = savedGridLayout
+        }
+    }
+
+    fun updateUiAlpha(alpha: Float) {
+        uiAlpha = alpha.coerceIn(0.15f, 1.0f)
+    }
+
+    fun onCustomBackgroundSaved() {
+        hasCustomBackground = true
+        backgroundReloadToken++
+    }
+
+    fun onCustomBackgroundCleared() {
+        hasCustomBackground = false
+        backgroundReloadToken++
+    }
+
+    fun toggleLandscapeBgMode() {
+        landscapeBgMode = when (landscapeBgMode) {
+            LandscapeBgMode.TRIPLE -> LandscapeBgMode.BLUR_WINGS
+            LandscapeBgMode.BLUR_WINGS -> LandscapeBgMode.CROP
+            LandscapeBgMode.CROP -> LandscapeBgMode.TRIPLE
         }
     }
 
