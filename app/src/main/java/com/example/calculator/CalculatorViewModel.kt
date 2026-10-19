@@ -32,7 +32,7 @@ enum class TopBarItem {
 }
 
 enum class LandscapeBgMode {
-    TRIPLE, BLUR_WINGS, CROP
+    CROP, TRIPLE, BLUR_WINGS
 }
 
 class CalculatorViewModel : ViewModel() {
@@ -79,7 +79,10 @@ class CalculatorViewModel : ViewModel() {
     var language by mutableStateOf(AppLanguage.RU)
         private set
 
-    var uiAlpha by mutableStateOf(0.72f)
+    var uiAlpha by mutableStateOf(0.85f)
+        private set
+
+    var isBackgroundEnabled by mutableStateOf(true)
         private set
 
     var hasCustomBackground by mutableStateOf(false)
@@ -88,7 +91,7 @@ class CalculatorViewModel : ViewModel() {
     var backgroundReloadToken by mutableStateOf(0)
         private set
 
-    var landscapeBgMode by mutableStateOf(LandscapeBgMode.TRIPLE)
+    var landscapeBgMode by mutableStateOf(LandscapeBgMode.CROP)
         private set
 
     var isScientificMode by mutableStateOf(false)
@@ -146,9 +149,10 @@ class CalculatorViewModel : ViewModel() {
         savedAutoSciOnLandscape: Boolean,
         savedTopBarOrder: List<TopBarItem>? = null,
         savedGridLayout: List<String?>? = null,
-        savedUiAlpha: Float = 0.72f,
-        savedLandscapeBgMode: LandscapeBgMode = LandscapeBgMode.TRIPLE,
-        savedHasCustomBg: Boolean = false
+        savedUiAlpha: Float = 0.85f,
+        savedLandscapeBgMode: LandscapeBgMode = LandscapeBgMode.CROP,
+        savedHasCustomBg: Boolean = false,
+        savedBgEnabled: Boolean = true
     ) {
         if (settingsLoaded) return
         settingsLoaded = true
@@ -158,9 +162,10 @@ class CalculatorViewModel : ViewModel() {
         language = savedLang
         isDegreeMode = savedDegreeMode
         autoScientificOnLandscape = savedAutoSciOnLandscape
-        uiAlpha = savedUiAlpha.coerceIn(0.15f, 1.0f)
+        uiAlpha = savedUiAlpha.coerceIn(0.10f, 1.0f)
         landscapeBgMode = savedLandscapeBgMode
         hasCustomBackground = savedHasCustomBg
+        isBackgroundEnabled = savedBgEnabled
 
         if (savedTopBarOrder != null && savedTopBarOrder.size == 3 && savedTopBarOrder.toSet() == DEFAULT_TOP_BAR.toSet()) {
             topBarOrder = savedTopBarOrder
@@ -171,11 +176,20 @@ class CalculatorViewModel : ViewModel() {
     }
 
     fun updateUiAlpha(alpha: Float) {
-        uiAlpha = alpha.coerceIn(0.15f, 1.0f)
+        uiAlpha = alpha.coerceIn(0.10f, 1.0f)
+    }
+
+    fun toggleBackgroundEnabled() {
+        isBackgroundEnabled = !isBackgroundEnabled
+    }
+
+    fun updateBackgroundEnabled(enabled: Boolean) {
+        isBackgroundEnabled = enabled
     }
 
     fun onCustomBackgroundSaved() {
         hasCustomBackground = true
+        isBackgroundEnabled = true
         backgroundReloadToken++
     }
 
@@ -186,9 +200,9 @@ class CalculatorViewModel : ViewModel() {
 
     fun toggleLandscapeBgMode() {
         landscapeBgMode = when (landscapeBgMode) {
+            LandscapeBgMode.CROP -> LandscapeBgMode.TRIPLE
             LandscapeBgMode.TRIPLE -> LandscapeBgMode.BLUR_WINGS
             LandscapeBgMode.BLUR_WINGS -> LandscapeBgMode.CROP
-            LandscapeBgMode.CROP -> LandscapeBgMode.TRIPLE
         }
     }
 

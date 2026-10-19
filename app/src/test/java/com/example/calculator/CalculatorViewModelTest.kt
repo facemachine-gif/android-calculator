@@ -67,21 +67,28 @@ class CalculatorViewModelTest {
         vm.toggleAutoScientificOnLandscape()
         assertTrue(vm.autoScientificOnLandscape)
 
-        // UI Opacity and Landscape Background Mode
-        assertEquals(0.72f, vm.uiAlpha, 0.001f)
-        vm.updateUiAlpha(0.45f)
-        assertEquals(0.45f, vm.uiAlpha, 0.001f)
+        // Background enabled toggle and default CROP mode
+        assertTrue(vm.isBackgroundEnabled)
+        vm.toggleBackgroundEnabled()
+        assertFalse(vm.isBackgroundEnabled)
+        vm.toggleBackgroundEnabled()
+        assertTrue(vm.isBackgroundEnabled)
 
+        assertEquals(0.85f, vm.uiAlpha, 0.001f)
+        vm.updateUiAlpha(1.0f)
+        assertEquals(1.0f, vm.uiAlpha, 0.001f)
+
+        assertEquals(LandscapeBgMode.CROP, vm.landscapeBgMode)
+        vm.toggleLandscapeBgMode()
         assertEquals(LandscapeBgMode.TRIPLE, vm.landscapeBgMode)
         vm.toggleLandscapeBgMode()
         assertEquals(LandscapeBgMode.BLUR_WINGS, vm.landscapeBgMode)
         vm.toggleLandscapeBgMode()
         assertEquals(LandscapeBgMode.CROP, vm.landscapeBgMode)
-        vm.toggleLandscapeBgMode()
-        assertEquals(LandscapeBgMode.TRIPLE, vm.landscapeBgMode)
 
         vm.onCustomBackgroundSaved()
         assertTrue(vm.hasCustomBackground)
+        assertTrue(vm.isBackgroundEnabled)
         vm.onCustomBackgroundCleared()
         assertFalse(vm.hasCustomBackground)
 
@@ -113,18 +120,20 @@ class CalculatorViewModelTest {
             savedLang = AppLanguage.EN,
             savedDegreeMode = true,
             savedAutoSciOnLandscape = true,
-            savedUiAlpha = 0.55f,
-            savedLandscapeBgMode = LandscapeBgMode.BLUR_WINGS,
-            savedHasCustomBg = true
+            savedUiAlpha = 1.0f,
+            savedLandscapeBgMode = LandscapeBgMode.CROP,
+            savedHasCustomBg = false,
+            savedBgEnabled = true
         )
         assertEquals(ThemeMode.DARK, vm.themeMode)
         assertEquals(ThemePalette.AMETHYST, vm.themePalette)
         assertEquals(ButtonShapeMode.ROUND, vm.buttonShapeMode)
         assertEquals(AppLanguage.EN, vm.language)
         assertTrue(vm.autoScientificOnLandscape)
-        assertEquals(0.55f, vm.uiAlpha, 0.001f)
-        assertEquals(LandscapeBgMode.BLUR_WINGS, vm.landscapeBgMode)
-        assertTrue(vm.hasCustomBackground)
+        assertEquals(1.0f, vm.uiAlpha, 0.001f)
+        assertEquals(LandscapeBgMode.CROP, vm.landscapeBgMode)
+        assertFalse(vm.hasCustomBackground)
+        assertTrue(vm.isBackgroundEnabled)
 
         vm.onOrientationChanged(isLandscape = false)
         assertFalse(vm.isScientificMode)
